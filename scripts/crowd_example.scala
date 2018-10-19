@@ -1,18 +1,20 @@
+import java.nio.file.{Path, Paths}
+
 import example._
 import qasrl.crowd._
 import spacro._
 import spacro.tasks._
 import spacro.util._
 import akka.pattern.ask
-import scala.concurrent.duration._
 
+import scala.concurrent.duration._
 import com.amazonaws.services.mturk._
 import com.amazonaws.services.mturk.model._
-
+import com.github.tototoshi.csv.CSVReader
 import nlpdata.util.Text
 import nlpdata.util.HasTokens.ops._
 
-val label = "trial"
+//val label = "trial"
 
 val isProduction = false // sandbox. change to true for production
 val domain = "localhost" // change to your domain, or keep localhost for testing
@@ -23,7 +25,12 @@ val interface = "0.0.0.0"
 val httpPort = 8888
 val httpsPort = 8080
 
-val annotationPath = java.nio.file.Paths.get(s"data/tqa/$label/annotations")
+val BATCH_NUMBER = 0
+
+val annotationPath = Paths.get(s"data/annotations/ecb_${BATCH_NUMBER}")
+val liveDataPath = Paths.get(s"data/live/ecb_${BATCH_NUMBER}")
+val qasrlPath = Paths.get(s"data/ecb/ECBPlus.qasrl.batch_${BATCH_NUMBER}.csv")
+
 implicit val timeout = akka.util.Timeout(5.seconds)
 implicit val config: TaskConfig = {
   if(isProduction) {
@@ -45,11 +52,11 @@ def exit = {
   System.out.println("Terminated actor system and logging. Type :q to end.")
 }
 
-val setup = new AnnotationSetup(label)
+val setup = new AnnotationSetup(qasrlPath, liveDataPath)
+
 import setup.SentenceIdHasTokens
 
 val exp = setup.experiment
-exp.server
 
 // use with caution... intended mainly for sandbox
 def deleteAll = {
@@ -94,6 +101,38 @@ def disableHITById(hitId: String) = {
   deleteHITById(hitId)
 }
 
-def getActiveHITIds = {
-  config.service.listAllHITs.map(_.getHITId)
+def getActiveHits = {
+  config.service.listAllHITs
 }
+
+def getActiveHITIds = {
+  getActiveHits.map(_.getHITId)
+}
+
+def flushAll(): Unit = {
+  for(hitId <- getActiveHITIds) {
+    disableHITById(hitId)
+  }
+}
+
+def hitInfo(hit: com.amazonaws.services.mturk.model.HIT): String = {
+  val hitType = hit.getHITTypeId match {
+    case exp.valTaskSpec.hitTypeId => "Validation"
+    case exp.genTaskSpec.hitTypeId => "Generation"
+    case _ => "UNKNOWN"
+  }
+  val info = s"${hit.getHITId}\t${hitType}\t${hit.getHITStatus}\t${hit.getCreationTime}"
+  info
+}
+
+def printMTurkHits() = {
+  val hitInfoHeading = s"id\thit_type\tstatus\tcreation_date"
+  
+  println(hitInfoHeading)
+  for (hit <- getActiveHits) {
+    val info = hitInfo(hit)
+    println(info)
+  }
+}
+
+
