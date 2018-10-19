@@ -37,10 +37,10 @@ import japgolly.scalajs.react.MonocleReact._
 class QASRLEvaluationClient[SID : Writer : Reader](
   instructions: VdomTag)(
   implicit settings: QASRLEvaluationSettings,
-  promptReader: Reader[QASRLEvaluationPrompt[SID]], // macro serializers don't work for superclass constructor parameters
+  promptReader: Reader[QASRLValidationPrompt[SID]], // macro serializers don't work for superclass constructor parameters
   responseWriter: Writer[List[QASRLValidationAnswer]], // same as above
   ajaxRequestWriter: Writer[QASRLValidationAjaxRequest[SID]] // "
-) extends TaskClient[QASRLEvaluationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]] {
+) extends TaskClient[QASRLValidationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]] {
 
   def main(): Unit = jQuery { () =>
     Styles.addToDocument()
@@ -54,7 +54,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
 
   import MultiContigSpanHighlightableSentenceComponent._
 
-  lazy val questions = prompt.sourcedQuestions.map(_.question)
+  lazy val questions = prompt.qaPairs.map(_.question)
 
   @Lenses case class State(
     curQuestion: Int,
@@ -185,16 +185,16 @@ class QASRLEvaluationClient[SID : Writer : Reader](
               SpanHighlighting(
                 SpanHighlightingProps(
                   isEnabled = !isNotAssigned && answers(curQuestion).isAnswer,
-                  enableSpanOverlap = true,
+                  enableSpanOverlap = false,
                   update = updateCurrentAnswers, render = {
                     case (hs @ SpanHighlightingState(spans, status), SpanHighlightingContext(_, hover, touch, cancelHighlight)) =>
-                      val curVerbIndex = prompt.sourcedQuestions(curQuestion).verbIndex
+                      val curVerbIndex = prompt.qaPairs(curQuestion).verbIndex
                       val inProgressAnswerOpt = SpanHighlightingStatus.highlighting.getOption(status).map {
                         case Highlighting(_, anchor, endpoint) => Span(anchor, endpoint)
                       }
                       val curAnswers = spans(curQuestion)
                       val otherAnswers = (spans - curQuestion).values.flatten
-                      val highlightedAnswers = prompt.sourcedQuestions.indices.map(i =>
+                      val highlightedAnswers = prompt.qaPairs.indices.map(i =>
                         i -> Answer(spans(i))
                       ).toMap
 
@@ -282,7 +282,8 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                               styleForIndex = i => TagMod(Styles.specialWord, Styles.niceBlue).when(i == curVerbIndex),
                               highlightedSpans = (
                                 inProgressAnswerOpt.map(_ -> (^.backgroundColor := "#FF8000")) ::
-                                curAnswers.map(_ -> (^.backgroundColor := "#FFFF00")).map(Some(_))).flatten,
+                                (curAnswers.map(_ -> (^.backgroundColor := "#FFFF00")) ++
+                                otherAnswers.map(_ -> (^.backgroundColor := "#DDDDDD"))).map(Some(_))).flatten,
                               hover = hover(state.curQuestion),
                               touch = touch(state.curQuestion),
                               render = (elements =>

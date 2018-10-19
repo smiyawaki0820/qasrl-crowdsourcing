@@ -26,13 +26,13 @@ import com.typesafe.scalalogging.StrictLogging
 
 class QASRLEvaluationHITManager[SID : Reader : Writer](
   valDisqualificationTypeId: String,
-  helper: HITManager.Helper[QASRLEvaluationPrompt[SID], List[QASRLValidationAnswer]],
-  numAssignmentsForPrompt: QASRLEvaluationPrompt[SID] => Int,
+  helper: HITManager.Helper[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]],
+  numAssignmentsForPrompt: QASRLValidationPrompt[SID] => Int,
   initNumHITsToKeepActive: Int,
-  _promptSource: Iterator[QASRLEvaluationPrompt[SID]])(
+  _promptSource: Iterator[QASRLValidationPrompt[SID]])(
   implicit annotationDataService: AnnotationDataService,
   settings: QASRLEvaluationSettings
-) extends NumAssignmentsHITManager[QASRLEvaluationPrompt[SID], List[QASRLValidationAnswer]](
+) extends NumAssignmentsHITManager[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]](
   helper, numAssignmentsForPrompt, initNumHITsToKeepActive, _promptSource, false) {
 
   override lazy val receiveAux2: PartialFunction[Any, Unit] = {
@@ -41,7 +41,7 @@ class QASRLEvaluationHITManager[SID : Reader : Writer](
     case ChristenWorker(workerId, numAgreementsToAdd) => christenWorker(workerId, numAgreementsToAdd)
   }
 
-  override def promptFinished(prompt: QASRLEvaluationPrompt[SID]): Unit = {
+  override def promptFinished(prompt: QASRLValidationPrompt[SID]): Unit = {
     val assignments = helper.allCurrentHITInfos(prompt).flatMap(_.assignments)
     val numValid = QASRLValidationAnswer.numValidQuestions(assignments.map(_.response))
     evaluationStats = assignments.map(a => a.response.map(ans => a.workerId -> ans)).transpose :: evaluationStats
@@ -157,7 +157,7 @@ class QASRLEvaluationHITManager[SID : Reader : Writer](
     }
   }
 
-  override def reviewAssignment(hit: HIT[QASRLEvaluationPrompt[SID]], assignment: Assignment[List[QASRLValidationAnswer]]): Unit = {
+  override def reviewAssignment(hit: HIT[QASRLValidationPrompt[SID]], assignment: Assignment[List[QASRLValidationAnswer]]): Unit = {
     helper.evaluateAssignment(hit, helper.startReviewing(assignment), Approval(""))
     if(!assignment.feedback.isEmpty) {
       feedbacks = assignment :: feedbacks
@@ -167,7 +167,7 @@ class QASRLEvaluationHITManager[SID : Reader : Writer](
     import assignment.workerId
 
     // grant bonus as appropriate
-    val numQuestions = hit.prompt.sourcedQuestions.size
+    val numQuestions = hit.prompt.qaPairs.size
     val totalBonus = settings.validationBonus(numQuestions)
     if(totalBonus > 0.0) {
       helper.config.service.sendBonus(

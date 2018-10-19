@@ -4,7 +4,7 @@ val monocleVersion = "1.4.0-M2"
 val circeVersion = "0.8.0"
 
 lazy val root = project.in(file("."))
-  .aggregate(qasrlJVM, qasrlJS, crowdJVM, crowdJS, exampleJVM, exampleJS)
+  .aggregate(qasrlJVM, qasrlJS, crowdJVM, crowdJS, /*exampleJVM, exampleJS, */ evalJVM, evalJS)
   .settings(
   publish := {},
   publishLocal := {})
@@ -114,4 +114,20 @@ lazy val exampleJVM = example.jvm.dependsOn(qasrlJVM, crowdJVM).settings(
   (resources in Compile) += (fastOptJS in (exampleJS, Compile)).value.data,
   (resources in Compile) += (packageScalaJSLauncher in (exampleJS, Compile)).value.data,
   (resources in Compile) += (packageJSDependencies in (exampleJS, Compile)).value
+)
+
+lazy val eval = crossProject.in(file("qasrl-crowd-eval"))
+  .settings(commonSettings).settings(
+  name := "qasrl-crowd-eval",
+  version := "0.1-SNAPSHOT"
+).jvmSettings(commonJVMSettings).jvmSettings(
+  libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3",
+  libraryDependencies += "com.github.tototoshi" %% "scala-csv" % "1.3.5"
+).jsSettings(commonJSSettings)
+
+lazy val evalJS = eval.js.dependsOn(qasrlJS, crowdJS)
+lazy val evalJVM = eval.jvm.dependsOn(qasrlJVM, crowdJVM).settings(
+  (resources in Compile) += (fastOptJS in (evalJS, Compile)).value.data,
+  (resources in Compile) += (packageScalaJSLauncher in (evalJS, Compile)).value.data,
+  (resources in Compile) += (packageJSDependencies in (evalJS, Compile)).value
 )
