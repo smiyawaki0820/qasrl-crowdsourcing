@@ -9,7 +9,7 @@ import nlpdata.datasets.wiktionary
 import nlpdata.util.HasTokens
 import nlpdata.util.HasTokens.ops._
 import nlpdata.util.HasTokens
-import qasrl.crowd.{FileSystemAnnotationDataService, QASRLEvaluationPipeline, QASRLEvaluationPrompt, QASRLGenerationPrompt, QASRLValidationPrompt, SourcedQuestion, VerbQA}
+import qasrl.crowd.{FileSystemAnnotationDataService, QASRLEvaluationPipeline, QASRLEvaluationPrompt, QASRLGenerationPrompt, QASRLValidationAnswer, QASRLValidationPrompt, SourcedQuestion, VerbQA}
 import spacro.HITInfo
 import spacro.tasks.TaskConfig
 import spacro.util.Span
@@ -130,5 +130,10 @@ class EvaluationSetup(genTypeId: String,
   val experiment = new QASRLEvaluationPipeline[SentenceId](
     allPrompts,
     numEvaluationAssignmentsForPrompt)
+
+  val exp = experiment
+
+
+
 
 }

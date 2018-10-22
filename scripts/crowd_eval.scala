@@ -1,7 +1,7 @@
 import java.nio.file.{Path, Paths}
 
 import eval._
-import qasrl.crowd._
+import qasrl.crowd.{QASRLValidationAnswer, _}
 import spacro._
 import spacro.tasks._
 import spacro.util._
@@ -133,5 +133,41 @@ def printMTurkHits() = {
     println(info)
   }
 }
+
+def progress() = {
+  val totalPrompts = exp.allPrompts.length
+  val savedPrompts = exp.allInfos
+
+  val uploadedPrompts = savedPrompts.length
+
+  val completedPrompts = savedPrompts.count(_.assignments.nonEmpty)
+
+  println(s"HitTypeId: ${exp.valTaskSpec.hitTypeId}")
+  println(f"uploaded: $uploadedPrompts / $totalPrompts ")
+  println(f"Completed: $completedPrompts / $totalPrompts ")
+}
+
+
+def savedHits(): Unit = {
+  val infos = for {
+    info <- exp.allInfos
+    hid = info.hit.hitId
+    sid = info.hit.prompt.genPrompt.id
+    vid = info.hit.prompt.genPrompt.verbIndex
+    questions = info.hit.prompt.qaPairs.map(_.question)
+    ass <- info.assignments
+    wid = ass.workerId
+    aid = ass.assignmentId
+    (question, valAnswer) <- questions.zip(ass.response)
+    theAnswer = QASRLValidationAnswer.render(sid.tokens, valAnswer)
+
+  } yield f"${sid.id}\t$vid\t$question\t$theAnswer\t$wid\t$aid\t$hid"
+  println("sent_id\tverb_idx\tquestion\tanswer\tworker_id\tassign_id\thit_id")
+  infos.foreach(println)
+}
+
+
+
+
 
 

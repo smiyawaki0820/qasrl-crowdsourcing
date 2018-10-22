@@ -190,7 +190,7 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
       valManagerPeek = new QASRLEvaluationHITManager(
         valAgrDisqualTypeId,
         valHelper,
-        numValidationsForPrompt,
+        if(config.isProduction) numValidationsForPrompt else (_ => 1),
         if(config.isProduction) 100 else 3,
         allPrompts.iterator)
       valManagerPeek
@@ -220,6 +220,7 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
   import TaskManager.Message._
   def start(interval: FiniteDuration = 30 seconds) = {
     server
+    logger.info(s"Evaluation HitTypeId: ${valTaskSpec.hitTypeId}")
     startSaves()
     valActor ! Start(interval, delay = 3 seconds)
   }
