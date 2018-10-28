@@ -51,7 +51,8 @@ def exit = {
   System.out.println("Terminated actor system and logging. Type :q to end.")
 }
 
-val genTypeId = "3DCAAKVOXBFBBYTGQJIY30T65H3FYZ"
+//val genTypeId = "3DCAAKVOXBFBBYTGQJIY30T65H3FYZ"
+val genTypeId = "./data/nrl_generated_0.2.csv"
 val setup = new EvaluationSetup(genTypeId, qasrlPath, liveDataPath)
 
 import setup.SentenceIdHasTokens

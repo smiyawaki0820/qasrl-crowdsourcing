@@ -16,7 +16,7 @@ import spacro.util.Span
 
 import scala.collection.immutable
 import scala.util.Try
-
+import scala.collection.JavaConverters._
 
 case class QA[SID](sentenceId: SID, verbIndex: Int, question: String, answer: Span)
 
@@ -90,6 +90,52 @@ class EvaluationSetup(genTypeId: String,
     valPrompts.toVector
   }
 
+
+  private def decodeAnswerRange(answerRange: String): Vector[Span] = {
+    val encodedSpans: Vector[String] = answerRange.split("~!~").toVector
+    val spans = encodedSpans.map( encSpan => {
+      val splits = encSpan.split(':').toVector
+      Span(splits(0).toInt, splits(1).toInt)
+    })
+    spans
+  }
+
+  private def getVerbQas(verbIdx: Int, qaPairs: Vector[QA[SentenceId]]): List[VerbQA] = {
+    // qaPairs already belong to a single <sentence, verb>
+    val verbQas = for {
+      (question, questionGroup) <- qaPairs.groupBy(_.question)
+      spans = questionGroup.map(_.answer)
+    } yield VerbQA(verbIdx, question, spans.toList)
+    verbQas.toList
+  }
+
+  private def getValidationPrompts(qaPairsCsvPath: Path, dataset: Map[String, Vector[String]]): Vector[QASRLValidationPrompt[SentenceId]] = {
+    val allRecords = CSVReader.open(qaPairsCsvPath.toString).allWithHeaders()
+    val qaPairs = (for {
+      rec <- allRecords
+      sentId = rec("ecb_id")
+      sent = dataset(sentId)
+      verb = rec("verb")
+      verbIdx = sent.indexOf(verb)
+      if verbIdx >= 0
+      question = rec("question")
+      answerRanges = rec("answer_range")
+      answerSpan <- decodeAnswerRange(answerRanges )
+    } yield new QA[SentenceId](SentenceId(sentId), verbIdx, question, answerSpan)).toVector
+
+    val valPrompts = for {
+      (key, qaGroup) <- qaPairs.groupBy(qa => (qa.sentenceId, qa.verbIndex))
+      (sentId, verbIdx) = key
+      verbQas = getVerbQas(verbIdx, qaGroup)
+      genPrompt = QASRLGenerationPrompt[SentenceId](sentId, verbIdx)
+
+    } yield QASRLValidationPrompt[SentenceId](genPrompt,"model_generated",
+      "model_generated_hit",
+      "model_generated_assign", verbQas)
+
+    valPrompts.toVector
+  }
+
   val dataset: Map[String, Vector[String]] = {
     logger.info(s"Reading dataset from: $datasetPath")
     val reader: CSVReader = CSVReader.open(datasetPath.toString)
@@ -126,7 +172,8 @@ class EvaluationSetup(genTypeId: String,
 
   def numEvaluationAssignmentsForPrompt(p: QASRLValidationPrompt[SentenceId]) = 3
 
-  val allPrompts: Vector[QASRLValidationPrompt[SentenceId]] = getValidationPrompts(genTypeId)
+  // sue genTypeId as CSV Path for model generated QA pairs
+  val allPrompts: Vector[QASRLValidationPrompt[SentenceId]] = getValidationPrompts(Paths.get(genTypeId), dataset)
   val experiment = new QASRLEvaluationPipeline[SentenceId](
     allPrompts,
     numEvaluationAssignmentsForPrompt)

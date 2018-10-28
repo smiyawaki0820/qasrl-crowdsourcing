@@ -4,7 +4,7 @@ val monocleVersion = "1.4.0-M2"
 val circeVersion = "0.8.0"
 
 lazy val root = project.in(file("."))
-  .aggregate(qasrlJVM, qasrlJS, crowdJVM, crowdJS, /*exampleJVM, exampleJS, */ evalJVM, evalJS)
+  .aggregate(qasrlJVM, qasrlJS, crowdJVM, crowdJS, /*exampleJVM, exampleJS) */ evalJVM, evalJS)
   .settings(
   publish := {},
   publishLocal := {})
@@ -23,7 +23,9 @@ lazy val commonSettings = Seq(
   libraryDependencies += "com.github.julien-truffaut" %%% "monocle-macro" % monocleVersion,
   libraryDependencies += "io.circe" %% "circe-core" % circeVersion,
   libraryDependencies += "io.circe" %% "circe-generic" % circeVersion,
-  libraryDependencies += "io.circe" %% "circe-parser" % circeVersion
+  libraryDependencies += "io.circe" %% "circe-parser" % circeVersion,
+
+  libraryDependencies += "com.github.tototoshi" %% "scala-csv" % "1.3.5"
 )
 
 lazy val commonJVMSettings = Seq()
@@ -121,8 +123,7 @@ lazy val eval = crossProject.in(file("qasrl-crowd-eval"))
   name := "qasrl-crowd-eval",
   version := "0.1-SNAPSHOT"
 ).jvmSettings(commonJVMSettings).jvmSettings(
-  libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3",
-  libraryDependencies += "com.github.tototoshi" %% "scala-csv" % "1.3.5"
+  libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 ).jsSettings(commonJSSettings)
 
 lazy val evalJS = eval.js.dependsOn(qasrlJS, crowdJS)
