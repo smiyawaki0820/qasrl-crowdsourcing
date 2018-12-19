@@ -1,3 +1,4 @@
+# %load "../annotations/parse_hits.py"
 import pandas as pd
 import os
 import codecs
@@ -5,15 +6,18 @@ from datetime import datetime, timedelta
 from logging import log, ERROR, INFO
 import json
 from glob import glob
-from tqdm import tqdm
+from tqdm import tqdm, tqdm_notebook
 from stanfordcorenlp import StanfordCoreNLP
+from decode_encode_answers import encode_qasrl
+import shutil
+
 
 def json_load(file_path):
     if not os.path.exists(file_path):
         log(ERROR, file_path)
     with codecs.open(file_path, "r", encoding="utf-8") as fd:
         return json.load(fd)
-    
+
 def parse_assign_time(assign):
     acc_time = int(assign['acceptTime'])
     acc_time = datetime.fromtimestamp(acc_time/1000.0)
@@ -22,17 +26,19 @@ def parse_assign_time(assign):
     assign_time = sub_time - acc_time
     return assign_time
 
+
 def parse_ecb_id(ecb_id: str):
     splits = ecb_id.split("_")
     file_name = "_".join(splits[:-1])
     sent_id = int(splits[-1])
     return file_name, sent_id
 
+
 def yield_parse_hits(hit_type_dir, parse_assignment):
     hit_dirs = glob(hit_type_dir + "/*")
     for hit_dir in hit_dirs:
         assign_files = glob(hit_dir + "/*.json")
-        assign_files = [assign_file for assign_file in assign_files 
+        assign_files = [assign_file for assign_file in assign_files
                         if "hit.json" not in assign_file]
         hit_file = os.path.join(hit_dir, "hit.json")
 
@@ -40,7 +46,11 @@ def yield_parse_hits(hit_type_dir, parse_assignment):
         assign_jsons = [json_load(assign_file) for assign_file in assign_files]
         for assign_json in assign_jsons:
             yield parse_assignment(hit_json, assign_json)
-            
+        else:
+            if "sourceAssignmentId" in hit_json['prompt']:
+                yield parse_assignment(hit_json)
+
+
 def group_answers(hit_df):
     non_answer_cols = list(set(hit_df.columns.values) - {'answer_range'})
     hit_df2 = hit_df.groupby(non_answer_cols).answer_range.apply(pd.Series.tolist).reset_index()
@@ -49,19 +59,11 @@ def group_answers(hit_df):
 
 CONCAT_THRESH = 3
 
-def make_int_pair(rng):
-    if rng == "NO_RANGE":
-        return None
-    first, second = rng.split(":")
-    return int(first), int(second)
-
-def encode_int_pairs(ranges):
-    return ["{}:{}".format(r[0], r[1]) for r in ranges]
 
 def concat_answer_ranges(ranges):
     if ranges[0] == "NO_RANGE":
         return ranges
-    ranges = [make_int_pair(r) for r in ranges]
+
     ranges = sorted(ranges, key=lambda rng: rng[0])
     new_ranges = ranges
     if len(ranges) < CONCAT_THRESH:
@@ -69,7 +71,7 @@ def concat_answer_ranges(ranges):
     # we store ranges as strings, since other than here, they are not of much use
     # and better serialize them in one big string
 
-    
+
     new_ranges = []
     prev_rng = ranges[0]
     for curr_rng in ranges[1:]:
@@ -82,12 +84,14 @@ def concat_answer_ranges(ranges):
             prev_rng = curr_rng
     # OK reached end, add the last prev_rng
     new_ranges.append(prev_rng)
-       
+
     return new_ranges
-    
+
+
 def get_answer_spans(answer_ranges, tokenized_sentence):
     spans = [" ".join(tokenized_sentence[r[0]:r[1]]) for r in answer_ranges]
     return spans
+
 
 def get_answer_spans_df(hit_df, sentence_map, sentence_id_field):
     hit_df.answer_range = hit_df.answer_range.apply(concat_answer_ranges)
@@ -101,22 +105,23 @@ def get_answer_spans_df(hit_df, sentence_map, sentence_id_field):
         tokens = sentence_map[row[sentence_id_field]]
         answer_spans = get_answer_spans(row.answer_range, tokens)
         answer_series.append(answer_spans)
-        
+
     hit_df['answer'] = pd.Series(answer_series)
-    # encode back to single string
-    hit_df.answer_range = hit_df.answer_range.apply(encode_int_pairs)
     return hit_df
+
 
 def get_verb(row, sentence_map, sentence_id_field):
     sentence = sentence_map[row[sentence_id_field]]
     return sentence[row.verb_idx]
 
+
 def get_verb_df(hit_df, sentence_map, sentence_id_field):
     return hit_df.apply(
         get_verb,
         sentence_map=sentence_map,
-        sentence_id_field=sentence_id_field, 
+        sentence_id_field=sentence_id_field,
         axis="columns")
+
 
 ### Parsing Question-Answer Generation Human Intelligence Task
 # hit.json:
@@ -186,29 +191,48 @@ def yield_qas(resp):
         question = qa['question']
         for ans in qa['answers']:
             begin, end = ans['begin'], ans['end']+1
-            answer_range = "{}:{}".format(begin, end)
+            answer_range = begin, end
             yield question, answer_range
 
-            
+
 def extract_field(ecb_id: str, ecb_df: pd.DataFrame, field_name: str):
     file_name, sent_id = parse_ecb_id(ecb_id)
-    filter_cond = (ecb_df.file_name == file_name) & (ecb_df.sent_id == sent_id) 
+    filter_cond = (ecb_df.file_name == file_name) & (ecb_df.sent_id == sent_id)
     tokens = ecb_df[filter_cond][field_name].iloc[0]
     return tokens
-    
-            
+
+
+def parse_generation_assignment_unvalidated(hit):
+    prompt = hit['prompt']
+    ecb_id = prompt['genPrompt']['id']['id']
+    verb_idx = prompt['genPrompt']['verbIndex']
+
+    gens = [{
+        "hit_id": prompt['sourceHITId'],
+        "hit_type": prompt['sourceHITTypeId'],
+        "assign_id": prompt['sourceAssignmentId'],
+        "worker_id": "manual",
+        "assign_time": 10,
+        "ecb_id": ecb_id,
+        "verb_idx": verb_idx,
+        "question": question,
+        "answer_range": answer_range
+    } for question, answer_range in yield_qas(prompt['qaPairs'])]
+    return pd.DataFrame.from_records(gens)
+
+
 def parse_generation_assignment(hit, assign):
     assert(assign['hitId'] == hit['hitId'])
     ecb_id = hit['prompt']['id']['id']
-    
+
     verb_idx = hit['prompt']['verbIndex']
-    
+
     assign_time = parse_assign_time(assign)
-    
+
     for qa in assign['response']:
         assert(qa['verbIndex'] == verb_idx)
     gens = [{
-        "hit_id": hit['hitId'], 
+        "hit_id": hit['hitId'],
         "hit_type": hit['hitTypeId'],
         "assign_id": assign['assignmentId'],
         "worker_id": assign['workerId'],
@@ -218,7 +242,7 @@ def parse_generation_assignment(hit, assign):
         "question": question,
         "answer_range": answer_range
     } for question, answer_range in yield_qas(assign['response'])]
-    
+
     return pd.DataFrame.from_records(gens)
 
 # ### Parse Question-Answer Validation
@@ -304,6 +328,8 @@ def parse_generation_assignment(hit, assign):
 #     "feedback": ""
 # }
 # ```
+
+
 def yield_qa_validations(resp, quests):
     # verify validator has answered all questions
     assert (len(resp) == len(quests))
@@ -311,18 +337,19 @@ def yield_qa_validations(resp, quests):
         if a['$type'] == "qasrl.crowd.Answer":
             for span in a['spans']:
                 begin, end = span['begin'], span['end']+1
-                ans_range = "{}:{}".format(begin, end)
+                ans_range = begin, end
                 yield q, ans_range
         else:
             yield q, "NO_RANGE"
-            
+
+
 def parse_validation_assignment(hit, assign):
     assert(assign['hitId'] == hit['hitId'])
     ecb_id = hit["prompt"]["genPrompt"]["id"]["id"]
     verb_idx = hit["prompt"]["genPrompt"]["verbIndex"]
     for q in hit["prompt"]['qaPairs']:
         assert(q['verbIndex'] == verb_idx)
-        
+
     quests = [q["question"] for q in hit["prompt"]['qaPairs']]
     resp = assign['response']
     assign_time = parse_assign_time(assign)
@@ -334,13 +361,13 @@ def parse_validation_assignment(hit, assign):
         "source_hit_type": hit["prompt"]['sourceHITTypeId'],
         "source_assign_id": hit["prompt"]['sourceAssignmentId'],
         "ecb_id": ecb_id, "verb_idx": verb_idx,
-        "question": question, "answer_range": ans_range        
+        "question": question, "answer_range": ans_range
     } for question, ans_range in yield_qa_validations(resp, quests)]
     return pd.DataFrame.from_records(qas)
 
 
 def get_validations(val_hit_dir, sentence_map, sentence_id_field):
-    val_assignment_dfs = tqdm(yield_parse_hits(val_hit_dir, parse_validation_assignment))
+    val_assignment_dfs = tqdm_notebook(yield_parse_hits(val_hit_dir, parse_validation_assignment))
     val_df = pd.concat(val_assignment_dfs)
 
     val_df2 = group_answers(val_df)
@@ -348,7 +375,7 @@ def get_validations(val_hit_dir, sentence_map, sentence_id_field):
     val_df2['verb'] = get_verb_df(val_df2, sentence_map, sentence_id_field)
     val_df2['val_idx'] = val_df2.groupby(["ecb_id", "verb_idx", "question"]).worker_id.transform(pd.Series.rank)
 
-    val_cols = ['question', 'answer', 'verb', "ecb_id", 
+    val_cols = ['question', 'answer', 'verb', "ecb_id",
                 'verb_idx', 'answer_range', 'hit_id', 'assign_id', 'worker_id',
                 'source_assign_id', 'hit_type', 'assign_time']
     val_df2 = val_df2[val_cols].copy()
@@ -357,55 +384,100 @@ def get_validations(val_hit_dir, sentence_map, sentence_id_field):
     return val_df2
 
 def get_generations(gen_hit_dir, sentence_map, sentence_id_field):
-    gen_assignment_dfs = tqdm(yield_parse_hits(gen_hit_dir, parse_generation_assignment))                                      
+    gen_assignment_dfs = tqdm_notebook(yield_parse_hits(gen_hit_dir, parse_generation_assignment))
     gen_df = pd.concat(gen_assignment_dfs)
 
     gen_df2 = group_answers(gen_df)
     gen_df2 = get_answer_spans_df(gen_df2, sentence_map, sentence_id_field)
     gen_df2['verb'] = get_verb_df(gen_df2, sentence_map, sentence_id_field)
 
-    gen_cols = ['question', 'answer', 'verb', "ecb_id", 
-                'verb_idx', 'answer_range', 'worker_id', 'assign_id', 'hit_id', 
+    gen_cols = ['question', 'answer', 'verb', "ecb_id",
+                'verb_idx', 'answer_range', 'worker_id', 'assign_id', 'hit_id',
                 'hit_type', 'assign_time']
 
     gen_df2 = gen_df2[gen_cols].copy()
     return gen_df2
 
-def main():
-    ROOT = os.path.join("annotations", "ecb_0", "production")
-    GEN_HIT_TYPE_ID = "3DCAAKVOXBFBBYTGQJIY30T65H3FYZ"
-    VAL_HIT_TYPE_ID = "395K4VYE01OHQHQLEOAXYXI0HDW566"
-    BATCH_NUMBER = 0
 
+def main():
+    ROOT = os.path.join("mult_generation", "ecb_mult_gen", "production")
+
+    GEN_HIT_TYPE_ID = "38DURKLYVFZK8QGAMLZIK48QNDBWJF"
+    VAL_HIT_TYPE_ID = "3RL1BYM291LGCZ20S10T3UV6YHR79U"
+
+
+    gen_hit_dir = os.path.join(ROOT, GEN_HIT_TYPE_ID)
+
+    val_hit_dir = os.path.join(ROOT, VAL_HIT_TYPE_ID)
+
+
+    print(gen_hit_dir, os.path.exists(gen_hit_dir))
+    print(val_hit_dir, os.path.exists(val_hit_dir))
+
+    ecb = pd.read_csv("mult_generation\ECBPlus.qasrl.batch_mult_gen.csv")
+    sent_map = dict(zip(ecb.ecb_id, ecb.tokens.apply(lambda t: t.split())))
+
+    # EVL_HIT_TYPE_ID = "dense_human_eval_3GTAJN9JK6EPYYRLZN8W2FEE09ZMXP"
+    # NRL_EVL_TYPE_ID = "dense_nrl_eval_3GTAJN9JK6EPYYRLZN8W2FEE09ZMXP"
+    BATCH_NUMBER = "mult_gen"
+    path_to_batch = "mult_generation\ecb_mult_gen.manual_annotated"
+
+    txt_files = glob(path_to_batch + "/**/*.txt")
+    for txt_path in txt_files:
+        print(txt_path)
+        new_path = os.path.splitext(txt_path)[0] + ".json"
+        shutil.move(txt_path, new_path)
+
+    gen_assignment_dfs = tqdm(yield_parse_hits(path_to_batch, parse_generation_assignment_unvalidated))
+    gen_df = pd.concat(gen_assignment_dfs)
+    gen_df2 = gen_df[gen_df.ecb_id.isin(sent_map.keys())].copy()
+    gen_df2 = group_answers(gen_df2)
+    gen_df2 = get_answer_spans_df(gen_df2, sent_map, "ecb_id")
+    gen_df2['verb'] = get_verb_df(gen_df2, sent_map, "ecb_id")
+
+    gen_cols = ["ecb_id", 'verb_idx', 'question', 'answer', 'verb', 'answer_range']# 'worker_id', 'assign_id', 'hit_id', 'hit_type', 'assign_time']
+
+    gen_df2 = gen_df2[gen_cols].copy()
+    gen_df2.sort_values(['ecb_id', 'verb_idx', 'question'], inplace=True)
+    encode_qasrl(gen_df2).to_csv("ecb_mult_gen.manual_annotated.csv", index=False, encoding="utf-8")
     # DIFFERENT TOKENIZERS ARE THE DEVIL.
     # spacy tokenizer makes different decisions for hyp-hen words
     # basic nltk.word_tokenize is ok, but for cases where the sentence begins with a dash ' as in a quote.
-    CORE_NLP_DIR = "c:/dev/stanford-corenlp-full-2018-10-05"
-    corenlp = StanfordCoreNLP(CORE_NLP_DIR)
-    gen_hit_dir = os.path.join(ROOT, GEN_HIT_TYPE_ID)
-    val_hit_dir = os.path.join(ROOT, VAL_HIT_TYPE_ID)
-    ecb_file_path = os.path.join(
-        "annotations",
-        "ECBPlus.qasrl.batch_{}.csv".format(BATCH_NUMBER))
+    # CORE_NLP_DIR = "c:/dev/stanford-corenlp-full-2018-10-05"
+    # ecb_file_path = os.path.join(
+    #     "annotations",
+    #     "ECBPlus.qasrl.batch_{}.csv".format(BATCH_NUMBER))
+    #
+    # gen_hit_dir = os.path.join(ROOT, GEN_HIT_TYPE_ID)
+    # val_hit_dir = os.path.join(ROOT, VAL_HIT_TYPE_ID)
 
-    print(ecb_file_path)
-    ecb = pd.read_csv(ecb_file_path)
-    ecb['tokens'] = ecb.sentence.apply(lambda s: corenlp.word_tokenize(s))
-    ecb['ecb_id'] = ecb.apply(lambda r: r.file_name + "_" + str(r.sent_id), axis="columns")
-    corenlp.close()
+    # evl_hit_dir = os.path.join(ROOT, EVL_HIT_TYPE_ID)
+    # nrl_evl_dir = os.path.join(ROOT, NRL_EVL_TYPE_ID)
 
-    ecb_id_2_tokens = dict(zip(ecb.ecb_id, ecb.tokens))
+    # ecb_id_2_tokens = get_sentence_map(CORE_NLP_DIR, ecb_file_path)
 
-    gen_df = get_generations(gen_hit_dir, ecb_id_2_tokens, "ecb_id")
-    val_df = get_validations(val_hit_dir, ecb_id_2_tokens, "ecb_id")
+    # gen_df = get_generations(gen_hit_dir, sent_map, "ecb_id")
+    # val_df = get_validations(val_hit_dir, sent_map, "ecb_id")
+    # val_df = get_validations(val_hit_dir, ecb_id_2_tokens, "ecb_id")
+    # evl_df = get_validations(evl_hit_dir, ecb_id_2_tokens, "ecb_id")
+    # nrl_eval_df = get_validations(nrl_evl_dir, ecb_id_2_tokens, "ecb_id")
 
-    # serialize lists (in single cell values) as strings
-    # will be easier to deserialize them back 
-    gen_df.answer = gen_df.answer.apply(lambda a: "~!~".join(a))
-    gen_df.answer_range = gen_df.answer_range.apply(lambda a: "~!~".join(a))
-    
-    gen_df.to_csv("generation_{}.csv".format(GEN_HIT_TYPE_ID), index=False, encoding="utf-8")
-    val_df.to_csv("validation_{}.csv".format(VAL_HIT_TYPE_ID), index=False, encoding="utf-8")
+    # to_csv(gen_df, "generation_{}.csv")
+    # to_csv(gen_df, "generation_{}.csv")
+    # to_csv(val_df, "validation_{}.csv".format(VAL_HIT_TYPE_ID))
+    # to_csv(evl_df, "validation_{}.csv".format(EVL_HIT_TYPE_ID))
+    # to_csv(nrl_eval_df, "validation_{}.csv".format(NRL_EVL_TYPE_ID))
+
+
+# def get_sentence_map(CORE_NLP_DIR, ecb_file_path):
+#     ecb = pd.read_csv(ecb_file_path)
+#     corenlp = StanfordCoreNLP(CORE_NLP_DIR)
+#     ecb['tokens'] = ecb.sentence.apply(lambda s: corenlp.word_tokenize(s))
+#     ecb['ecb_id'] = ecb.apply(lambda r: r.file_name + "_" + str(r.sent_id), axis="columns")
+#     corenlp.close()
+#     ecb_id_2_tokens = dict(zip(ecb.ecb_id, ecb.tokens))
+#     return ecb_id_2_tokens
+
 
 if __name__ == "__main__":
     main()
