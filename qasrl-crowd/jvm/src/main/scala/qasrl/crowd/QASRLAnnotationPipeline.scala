@@ -40,7 +40,9 @@ import com.typesafe.scalalogging.StrictLogging
 
 class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   val allIds: Vector[SID], // IDs of sentences to annotate
-  numGenerationAssignmentsForPrompt: QASRLGenerationPrompt[SID] => Int,
+  numGenerationAssignmentsForPrompt: Int,
+  numValidationAssignmentsForPrompt: Int,
+  numActivePrompts: Int,
   annotationDataService: AnnotationDataService,
   frozenGenerationHITTypeId: Option[String] = None,
   frozenValidationHITTypeId: Option[String] = None,
@@ -334,8 +336,8 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
         valAgrDisqualTypeId,
         accuracyTracker,
         // sentenceTracker,
-        if(config.isProduction) (_ => 2) else (_ => 1),
-        if(config.isProduction) 100 else 3)
+        if(config.isProduction) _ => numValidationAssignmentsForPrompt else _ => 1,
+        if(config.isProduction) numActivePrompts else 3)
       valManagerPeek
     })
 
@@ -358,8 +360,8 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
         valManager,
         genCoverageDisqualTypeId,
         // sentenceTracker,
-        if(config.isProduction) numGenerationAssignmentsForPrompt else (_ => 1),
-        if(config.isProduction) 100 else 3,
+        if(config.isProduction) _ => numGenerationAssignmentsForPrompt else _ => 1,
+        if(config.isProduction) numActivePrompts else 3,
         allPrompts.iterator)
       genManagerPeek
     }

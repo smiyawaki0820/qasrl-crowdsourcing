@@ -14,7 +14,6 @@ import com.github.tototoshi.csv.CSVReader
 import nlpdata.util.Text
 import nlpdata.util.HasTokens.ops._
 
-//val label = "trial"
 
 val isProduction = false // sandbox. change to true for production
 val domain = "localhost" // change to your domain, or keep localhost for testing
@@ -25,11 +24,9 @@ val interface = "0.0.0.0"
 val httpPort = 8888
 val httpsPort = 8080
 
-val BATCH_NUMBER = 0
-
-val annotationPath = Paths.get(s"data/annotations/ecb_${BATCH_NUMBER}")
-val liveDataPath = Paths.get(s"data/live/ecb_${BATCH_NUMBER}")
-val qasrlPath = Paths.get(s"data/ecb/ECBPlus.qasrl.batch_${BATCH_NUMBER}.csv")
+val annotationPath = Paths.get(s"data/annotations/wikinews")
+val liveDataPath = Paths.get(s"data/live/wikinews")
+val qasrlPath = Paths.get(s"data/ecb/wikinews.dev.data.csv")
 
 implicit val timeout = akka.util.Timeout(5.seconds)
 implicit val config: TaskConfig = {
@@ -52,7 +49,15 @@ def exit = {
   System.out.println("Terminated actor system and logging. Type :q to end.")
 }
 
-val setup = new AnnotationSetup(qasrlPath, liveDataPath)
+val numGenerationsPerPrompt = 1
+val numValidationsPerPrompt = 2
+val numActivePrompts = 50
+
+val setup = new AnnotationSetup(qasrlPath,
+  liveDataPath,
+  numGenerationsPerPrompt,
+  numValidationsPerPrompt,
+  numActivePrompts)
 
 import setup.SentenceIdHasTokens
 
@@ -133,6 +138,41 @@ def printMTurkHits() = {
     val info = hitInfo(hit)
     println(info)
   }
+}
+
+def progress() = {
+  val totalPrompts = exp.allPrompts.length
+  val savedPrompts = exp.allGenInfos.length
+  val uploadedGenerationsCount = exp.allGenInfos.length
+  val completedGenerationsCount = exp.allGenInfos.count(_.assignments.nonEmpty)
+
+  val uploadedValidationsCount = exp.allValInfos.length
+  val completedValidationsCount = exp.allValInfos.count(_.assignments.nonEmpty)
+
+  println(s"Generation HitTypeId: ${exp.genTaskSpec.hitTypeId}")
+  println(s"Validation HitTypeId: ${exp.valTaskSpec.hitTypeId}")
+
+  println(f"Generation uploaded / completed / total: $uploadedGenerationsCount / $completedGenerationsCount / $totalPrompts ")
+  println(f"Validation uploaded / completed / total: $uploadedValidationsCount / $completedValidationsCount / $totalPrompts ")
+}
+
+
+def savedHits(): Unit = {
+  val infos = for {
+    info <- exp.allValInfos
+    hid = info.hit.hitId
+    sid = info.hit.prompt.genPrompt.id
+    vid = info.hit.prompt.genPrompt.verbIndex
+    questions = info.hit.prompt.qaPairs.map(_.question)
+    ass <- info.assignments
+    wid = ass.workerId
+    aid = ass.assignmentId
+    (question, valAnswer) <- questions.zip(ass.response)
+    theAnswer = QASRLValidationAnswer.render(sid.tokens, valAnswer)
+
+  } yield f"${sid.id}\t$vid\t$question\t$theAnswer\t$wid\t$aid\t$hid"
+  println("sent_id\tverb_idx\tquestion\tanswer\tworker_id\tassign_id\thit_id")
+  infos.foreach(println)
 }
 
 

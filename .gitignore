@@ -3,3 +3,6 @@
 
 target/
 data/
+.idea/
+*.p12
+*keystore-password

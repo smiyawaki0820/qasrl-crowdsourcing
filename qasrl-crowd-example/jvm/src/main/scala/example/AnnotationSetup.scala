@@ -16,11 +16,14 @@ import upickle.default._
 import scala.language.postfixOps
 import scala.util.Try
 
-class AnnotationSetup(datasetPath: Path, liveDataPath: Path)(
+class AnnotationSetup(datasetPath: Path, liveDataPath: Path,
+                      numGenerationsPerPrompt: Int,
+                      numValidationsPerPrompt: Int,
+                      numActivePrompts: Int)(
   implicit config: TaskConfig) extends StrictLogging{
 
-  val resourcePath = java.nio.file.Paths.get("datasets")
-  val staticDataPath = Paths.get(s"data/static")
+  val resourcePath: Path = java.nio.file.Paths.get("datasets")
+  val staticDataPath: Path = Paths.get(s"data/static")
 
   val liveAnnotationDataService = new FileSystemAnnotationDataService(liveDataPath)
 
@@ -43,12 +46,12 @@ class AnnotationSetup(datasetPath: Path, liveDataPath: Path)(
     logger.info(s"Reading dataset from: $datasetPath")
     val reader: CSVReader = CSVReader.open(datasetPath.toString)
     // CSV format:
-    // file_name, sent_id, sentence
+    // qasrl_id, sentence
     // 10_13ecbplus.xml,0,Report: Red Sox offer Teixeira $200 million
     val csvRecords = reader.allWithHeaders()
     (for {
       rec <- csvRecords
-      id = rec("file_name") + "_" + rec("sent_id")
+      id = rec("qasrl_id")
       sent = rec("sentence")
       tokens: Vector[String] = Tokenizer.tokenize(sent)
     } yield id -> tokens).toMap
@@ -72,10 +75,12 @@ class AnnotationSetup(datasetPath: Path, liveDataPath: Path)(
     Wiktionary.getInflectionsForTokens(tokens)
   }
 
-  def numGenerationAssignmentsForPrompt(p: QASRLGenerationPrompt[SentenceId]) = 1
 
   lazy val experiment = new QASRLAnnotationPipeline(
-    allIds, numGenerationAssignmentsForPrompt,
+    allIds,
+    numGenerationsPerPrompt,
+    numValidationsPerPrompt,
+    numActivePrompts,
     liveAnnotationDataService)
 
   def saveAnnotationData[A](
