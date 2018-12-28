@@ -157,6 +157,8 @@ class QASRLValidationHITManager[SID : Reader : Writer](
             .withWorkerId(worker.workerId)
             .withReason("Agreement dropped too low on the question answering task."))
       } else if(!workerIsDisqualified && workerShouldBeDisqualified) {
+        val logMessage = s"Validation\tDisqualifying\tWorker:\t${worker.workerId}\tAgreement:\t${worker.agreement}"
+        logger.info(logMessage)
         helper.config.service.associateQualificationWithWorker(
           new AssociateQualificationWithWorkerRequest()
             .withQualificationTypeId(valDisqualificationTypeId)
@@ -169,6 +171,7 @@ class QASRLValidationHITManager[SID : Reader : Writer](
 
   def blockWorker(workerId: String) = {
     if(!blockedValidators.contains(workerId)) {
+      logger.info(s"Validation\tBlocking\tWorker:\t$workerId")
       helper.config.service.createWorkerBlock(
         new CreateWorkerBlockRequest()
           .withWorkerId(workerId)
@@ -203,6 +206,9 @@ class QASRLValidationHITManager[SID : Reader : Writer](
     val numQuestions = hit.prompt.qaPairs.size
     val totalBonus = settings.validationBonus(numQuestions)
     if(totalBonus > 0.0) {
+      val bonusMessage = s"Validation\tBonus:\t$totalBonus\tHitType:\t${assignment.hitTypeId}\tHitId:\t${assignment.hitId}\t"
+      val assignMessage = s"Worker:\t$workerId\tassignment:\t${assignment.assignmentId}"
+      logger.info(bonusMessage + assignMessage)
       helper.config.service.sendBonus(
         new SendBonusRequest()
           .withWorkerId(workerId)

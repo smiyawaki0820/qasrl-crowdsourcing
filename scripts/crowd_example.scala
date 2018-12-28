@@ -26,7 +26,7 @@ val httpsPort = 8080
 
 val annotationPath = Paths.get(s"data/annotations/wikinews")
 val liveDataPath = Paths.get(s"data/live/wikinews")
-val qasrlPath = Paths.get(s"data/ecb/wikinews.dev.data.csv")
+val qasrlPath = Paths.get(s"data/wikinews.dev.data.csv")
 
 implicit val timeout = akka.util.Timeout(5.seconds)
 implicit val config: TaskConfig = {
@@ -174,5 +174,3 @@ def savedHits(): Unit = {
   println("sent_id\tverb_idx\tquestion\tanswer\tworker_id\tassign_id\thit_id")
   infos.foreach(println)
 }
-
-

@@ -83,12 +83,13 @@ class QASRLGenerationAccuracyManager[SID : Reader : Writer](
               .withWorkerId(stats.workerId)
               .withReason("Accuracy dropped too low on the question writing task."))
         } else if(!workerIsDisqualified && workerShouldBeDisqualified) {
-          config.service.associateQualificationWithWorker(
-            new AssociateQualificationWithWorkerRequest()
-              .withQualificationTypeId(genDisqualificationTypeId)
-              .withWorkerId(stats.workerId)
-              .withIntegerValue(1)
-              .withSendNotification(true))
+            logger.info(s"Generation\tDisqualifying\tWorker:\t${stats.workerId}\tAgreement:\t${stats.accuracy}")
+            config.service.associateQualificationWithWorker(
+              new AssociateQualificationWithWorkerRequest()
+                .withQualificationTypeId(genDisqualificationTypeId)
+                .withWorkerId(stats.workerId)
+                .withIntegerValue(1)
+                .withSendNotification(true))
         }
       }
     }
@@ -126,6 +127,9 @@ class QASRLGenerationAccuracyManager[SID : Reader : Writer](
           val bonusAwarded = settings.generationBonus(numQAsValid)
           val bonusCents = dollarsToCents(bonusAwarded)
           if(bonusAwarded > 0.0) {
+            val bonusMessage = s"Generation\tBonus:\t$bonusAwarded\tHitType:\t${assignment.hitTypeId}\tHitId:\t${assignment.hitId}\t"
+            val assignMessage = s"Worker:\t${assignment.workerId}\tassignment:\t${assignment.assignmentId}"
+            logger.info(bonusMessage + assignMessage)
             Try(
               service.sendBonus(
                 new SendBonusRequest()
