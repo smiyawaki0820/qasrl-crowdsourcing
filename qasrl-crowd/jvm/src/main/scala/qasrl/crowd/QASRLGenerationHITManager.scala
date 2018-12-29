@@ -101,6 +101,7 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
     if (workers.contains(workerId)) {
       None
     } else {
+      logger.info(s"Temporarily removing vaidation qualificiations for worker: $workerId")
       Some(config.service.associateQualificationWithWorker(
         new AssociateQualificationWithWorkerRequest()
           .withQualificationTypeId(validationTempDisqualifyTypeId)
@@ -116,6 +117,7 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
         .withMaxResults(100)
         .withQualificationTypeId(validationTempDisqualifyTypeId))
     for (q <- res.getQualifications().asScala){
+      logger.info(s"Restoring vaidation qualificiations for worker: ${q.getWorkerId}")
       config.service.disassociateQualificationFromWorker(
         new DisassociateQualificationFromWorkerRequest()
           .withWorkerId(q.getWorkerId)
@@ -123,7 +125,6 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
           .withReason("Restored your ability to validate answers. " +
             "Thank you for participating.")
       )
-
     }
   }
 
