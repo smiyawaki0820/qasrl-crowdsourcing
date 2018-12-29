@@ -19,7 +19,9 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
   validationHelper: HITManager.Helper[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]],
   validationActor: ActorRef,
   coverageDisqualificationTypeId: String,
+  genAssignLimitDisqualTypeId: String,
   validationTempDisqualifyTypeId: String,
+  assignLimit: Int,
   // sentenceTrackingActor: ActorRef,
   numAssignmentsForPrompt: QASRLGenerationPrompt[SID] => Int,
   initNumHITsToKeepActive: Int,
@@ -89,42 +91,25 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
     logger.info("Generation data saved.")
   }
 
-  def disqualifyValidationFromWorker(workerId: String) = {
+  def disqualify(workerId: String, qualification: String, notify:Boolean = true) = {
     // This may put a bit pressure on AMT, hopefully, not too much...
     // This is called every time a generator submits an assignment.
     // Every once in a few seconds at best..
     val res = config.service.listWorkersWithQualificationType(
       new ListWorkersWithQualificationTypeRequest()
         .withMaxResults(100)
-        .withQualificationTypeId(validationTempDisqualifyTypeId))
+        .withQualificationTypeId(qualification))
     val workers = res.getQualifications.asScala.map(_.getWorkerId).toSet
     if (workers.contains(workerId)) {
       None
     } else {
-      logger.info(s"Temporarily removing vaidation qualificiations for worker: $workerId")
+      logger.info(s"Disqualifying: $qualification from worker: $workerId")
       Some(config.service.associateQualificationWithWorker(
         new AssociateQualificationWithWorkerRequest()
-          .withQualificationTypeId(validationTempDisqualifyTypeId)
+          .withQualificationTypeId(qualification)
           .withWorkerId(workerId)
           .withIntegerValue(1)
-          .withSendNotification(true)))
-    }
-  }
-
-  def onStop() = {
-    val res = config.service.listWorkersWithQualificationType(
-      new ListWorkersWithQualificationTypeRequest()
-        .withMaxResults(100)
-        .withQualificationTypeId(validationTempDisqualifyTypeId))
-    for (q <- res.getQualifications().asScala){
-      logger.info(s"Restoring vaidation qualificiations for worker: ${q.getWorkerId}")
-      config.service.disassociateQualificationFromWorker(
-        new DisassociateQualificationFromWorkerRequest()
-          .withWorkerId(q.getWorkerId)
-          .withQualificationTypeId(validationTempDisqualifyTypeId)
-          .withReason("Restored your ability to validate answers. " +
-            "Thank you for participating.")
-      )
+          .withSendNotification(notify)))
     }
   }
 
@@ -149,7 +134,7 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
           .withSendNotification(true))
     }
 
-    disqualifyValidationFromWorker(assignment.workerId)
+    disqualify(assignment.workerId, validationTempDisqualifyTypeId, false)
 
     val validationPrompt = QASRLValidationPrompt(hit.prompt, hit.hitTypeId, hit.hitId, assignment.assignmentId, assignment.response)
     validationActor ! validationHelper.Message.AddPrompt(validationPrompt)

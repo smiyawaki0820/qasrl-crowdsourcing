@@ -1,32 +1,23 @@
 package qasrl.crowd
 
 import qasrl.crowd.util.dollarsToCents
-
 import spacro._
 import spacro.tasks._
 import spacro.util._
 
 import scala.collection.mutable
-import scala.util.{Try, Success, Failure}
-
+import scala.util.{Failure, Success, Try}
 import upickle.default.Reader
-
 import akka.actor.ActorRef
-
-import com.amazonaws.services.mturk.model.AssociateQualificationWithWorkerRequest
-import com.amazonaws.services.mturk.model.SendBonusRequest
-import com.amazonaws.services.mturk.model.NotifyWorkersRequest
-import com.amazonaws.services.mturk.model.CreateWorkerBlockRequest
-import com.amazonaws.services.mturk.model.ListWorkersWithQualificationTypeRequest
-import com.amazonaws.services.mturk.model.DisassociateQualificationFromWorkerRequest
-
+import com.amazonaws.services.mturk.model.{Assignment => _, HIT => _, _}
 import upickle.default._
-
 import com.typesafe.scalalogging.StrictLogging
 
 class QASRLValidationHITManager[SID : Reader : Writer](
   helper: HITManager.Helper[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]],
   valDisqualificationTypeId: String,
+  valAssignLimitDisqualTypeId: String,
+  valAssignmentLimit: Int,
   accuracyStatsActor: ActorRef,
   numAssignmentsForPrompt: QASRLValidationPrompt[SID] => Int,
   initNumHITsToKeepActive: Int)(
@@ -151,22 +142,32 @@ class QASRLValidationHITManager[SID : Reader : Writer](
         worker.numAssignmentsCompleted > settings.validationAgreementGracePeriod
 
       if(workerIsDisqualified && !workerShouldBeDisqualified) {
-        helper.config.service.disassociateQualificationFromWorker(
-          new DisassociateQualificationFromWorkerRequest()
-            .withQualificationTypeId(valDisqualificationTypeId)
-            .withWorkerId(worker.workerId)
-            .withReason("Agreement dropped too low on the question answering task."))
+        qualify(worker.workerId, valDisqualificationTypeId,
+          "Agreement dropped too low on the question answering task.")
+
       } else if(!workerIsDisqualified && workerShouldBeDisqualified) {
         val logMessage = s"Validation\tDisqualifying\tWorker:\t${worker.workerId}\tAgreement:\t${worker.agreement}"
         logger.info(logMessage)
-        helper.config.service.associateQualificationWithWorker(
-          new AssociateQualificationWithWorkerRequest()
-            .withQualificationTypeId(valDisqualificationTypeId)
-            .withWorkerId(worker.workerId)
-            .withIntegerValue(1)
-            .withSendNotification(true))
+        disqualify(worker.workerId, valDisqualificationTypeId)
       }
     }
+  }
+
+  def disqualify(workerId: String, qualification: String, notify: Boolean = true) = {
+    helper.config.service.associateQualificationWithWorker(
+      new AssociateQualificationWithWorkerRequest()
+        .withQualificationTypeId(qualification)
+        .withWorkerId(workerId)
+        .withIntegerValue(1)
+        .withSendNotification(notify))
+  }
+
+  def qualify(workerId: String, qualification: String, reason: String, notify:Boolean = true) = {
+    helper.config.service.disassociateQualificationFromWorker(
+      new DisassociateQualificationFromWorkerRequest()
+        .withQualificationTypeId(qualification)
+        .withWorkerId(workerId)
+        .withReason(reason))
   }
 
   def blockWorker(workerId: String) = {
@@ -232,6 +233,13 @@ class QASRLValidationHITManager[SID : Reader : Writer](
 
     if(!blockedValidators.contains(assignment.workerId)) {
       accuracyStatsActor ! QASRLValidationResult(hit.prompt, assignment.workerId, assignment.response)
+    }
+
+    if(newWorkerInfo.numAssignmentsCompleted > valAssignmentLimit) {
+      val logMessage = s"Validation Disqualifying\tWorker:${newWorkerInfo.workerId}" +
+        s"\tnumAssignmentsCompleted: ${newWorkerInfo.numAssignmentsCompleted}"
+      logger.info(logMessage)
+      disqualify(newWorkerInfo.workerId, valAssignLimitDisqualTypeId, notify=false)
     }
 
     // NOTE: stopgap measure to probably get quality control working again.

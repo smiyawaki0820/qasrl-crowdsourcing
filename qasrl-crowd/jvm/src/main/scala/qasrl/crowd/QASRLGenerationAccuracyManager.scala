@@ -1,30 +1,22 @@
 package qasrl.crowd
 
+import scala.collection.JavaConverters._
+
 import qasrl.crowd.util.implicits._
 import qasrl.crowd.util.dollarsToCents
-
 import spacro._
 import spacro.tasks._
 import spacro.util._
 
 import scala.collection.mutable
-import scala.util.{Try, Success, Failure}
-
+import scala.util.{Failure, Success, Try}
 import akka.actor.{Actor, ActorRef}
-
-import com.amazonaws.services.mturk.model.AssignmentStatus
-import com.amazonaws.services.mturk.model.HITStatus
-import com.amazonaws.services.mturk.model.SendBonusRequest
-import com.amazonaws.services.mturk.model.NotifyWorkersRequest
-import com.amazonaws.services.mturk.model.AssociateQualificationWithWorkerRequest
-import com.amazonaws.services.mturk.model.DisassociateQualificationFromWorkerRequest
-
+import com.amazonaws.services.mturk.model.{Assignment => _, _}
 import upickle.default._
-
 import com.typesafe.scalalogging.StrictLogging
 
 class QASRLGenerationAccuracyManager[SID : Reader : Writer](
-  genDisqualificationTypeId: String)(
+  genDisqualificationTypeId: String, genAssignLimitDisqualType: String, assignLimit: Int)(
   implicit annotationDataService: AnnotationDataService,
   config: TaskConfig,
   settings: QASRLSettings
@@ -65,6 +57,27 @@ class QASRLGenerationAccuracyManager[SID : Reader : Writer](
     assignmentsForHIT.find(_.assignmentId == valPrompt.sourceAssignmentId)
   }
 
+  def disqualify(workerId: String, qualification: String, notify: Boolean = true) = {
+    // This may put a bit pressure on AMT, hopefully, not too much...
+    val res = config.service.listWorkersWithQualificationType(
+      new ListWorkersWithQualificationTypeRequest()
+        .withMaxResults(100)
+        .withQualificationTypeId(qualification))
+
+    val workers = res.getQualifications.asScala.map(_.getWorkerId).toSet
+    if (workers.contains(workerId)) {
+      None
+    } else {
+      logger.info(s"Disqualifying: $qualification from worker: $workerId")
+      Some(config.service.associateQualificationWithWorker(
+        new AssociateQualificationWithWorkerRequest()
+          .withQualificationTypeId(qualification)
+          .withWorkerId(workerId)
+          .withIntegerValue(1)
+          .withSendNotification(notify)))
+    }
+  }
+
   def assessQualification(workerId: String): Unit = {
     Try {
       allWorkerStats.get(workerId).foreach { stats =>
@@ -90,6 +103,10 @@ class QASRLGenerationAccuracyManager[SID : Reader : Writer](
                 .withWorkerId(stats.workerId)
                 .withIntegerValue(1)
                 .withSendNotification(true))
+        }
+
+        if (stats.numAssignmentsCompleted > assignLimit){
+          disqualify(stats.workerId, genAssignLimitDisqualType, false)
         }
       }
     }

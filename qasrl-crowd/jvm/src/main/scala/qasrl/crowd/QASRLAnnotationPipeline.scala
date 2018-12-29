@@ -67,6 +67,9 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     verbIndex <- getKeyIndices(id).toList.sorted
   } yield QASRLGenerationPrompt(id, verbIndex)
 
+  lazy val assignLimit: Int = math.max(10, 0.1*allPrompts.length).toInt
+  logger.info(s"Assignment Limit: $assignLimit")
+
   implicit val ads = annotationDataService
 
   import config.hitDataService
@@ -126,7 +129,6 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     createQualification(genAccDisqualTypeName, "Accuracy on the question-answer writing task is too low.")
   }
 
-  val genAccDisqualTypeId = genAccDisqualType.getQualificationTypeId
   val genAccuracyRequirement = createDisqualificationReq(genAccDisqualType)
 
   val genCoverageDisqualTypeLabelString = generationCoverageDisqualTypeLabel.fold("")(x => s"[$x] ")
@@ -138,6 +140,13 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
       "pair generation task is too low.")
   }
   val genCoverageRequirement = createDisqualificationReq(genCoverageDisqualType)
+
+  val genAssignmentLimitTypeName = "Diversity of annotators in collected questions"
+  val genAssignmentLimitType = findQualificationType(genAssignmentLimitTypeName).getOrElse{
+    logger.info(s"Generating $genAssignmentLimitTypeName...")
+    createQualification(genAssignmentLimitTypeName , "Ensure a diverse annotator pool for writing questions")
+  }
+  val genAssignmentLimitRequirement = createDisqualificationReq(genAssignmentLimitType)
 
   val valAgrDisqualTypeLabelString = validationAgreementDisqualTypeLabel.fold("")(x => s"[$x] ")
   val valAgrDisqualTypeName = s"${valAgrDisqualTypeLabelString}Question answering agreement disqualification"
@@ -158,23 +167,32 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   }
   val valTempDisqualifyRequirement = createDisqualificationReq(valTempDisqualifyType)
 
-  // NOTE may need to call multiple times to cover all workers... sigh TODO pagination
-  def resetAllQualificationValues = {
-    def revokeAllWorkerQuals(qualTypeId: String) = {
-      val quals = config.service.listWorkersWithQualificationType(
-        new ListWorkersWithQualificationTypeRequest()
+  val valAssignmentLimitTypeName = "Diversity of annotators in collected answers"
+  val valAssignmentLimitType = findQualificationType(valAssignmentLimitTypeName).getOrElse{
+    logger.info(s"Generating $valAssignmentLimitTypeName...")
+    createQualification(valAssignmentLimitTypeName , "Ensure a diverse annotator pool for writing answers")
+  }
+  val valAssignmentLimitRequirement = createDisqualificationReq(valAssignmentLimitType)
+
+  def revokeAllWorkerQuals(qualTypeId: String, reason: String = "") = {
+    val quals = config.service.listWorkersWithQualificationType(
+      new ListWorkersWithQualificationTypeRequest()
+        .withQualificationTypeId(qualTypeId)
+        .withMaxResults(100)
+    ).getQualifications.asScala.toList
+    for (qual <- quals) {
+      logger.info(s"Restoring qualificiation: $qualTypeId for worker: ${qual.getWorkerId}")
+      config.service.disassociateQualificationFromWorker(
+        new DisassociateQualificationFromWorkerRequest()
           .withQualificationTypeId(qualTypeId)
-          .withMaxResults(100)
-      ).getQualifications.asScala.toList
-      quals.foreach(qual =>
-        config.service.disassociateQualificationFromWorker(
-          new DisassociateQualificationFromWorkerRequest()
-            .withQualificationTypeId(qualTypeId)
-            .withWorkerId(qual.getWorkerId)
-        )
+          .withWorkerId(qual.getWorkerId)
       )
     }
-    revokeAllWorkerQuals(genAccDisqualTypeId)
+  }
+
+  // NOTE may need to call multiple times to cover all workers... sigh TODO pagination
+  def resetAllQualificationValues = {
+    revokeAllWorkerQuals(genAccDisqualType.getQualificationTypeId)
     revokeAllWorkerQuals(genCoverageDisqualType.getQualificationTypeId)
     revokeAllWorkerQuals(valAgrDisqualType.getQualificationTypeId)
     revokeAllWorkerQuals(valTempDisqualifyType.getQualificationTypeId)
@@ -265,7 +283,8 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     reward = settings.validationReward,
     keywords = "language,english,question answering",
     qualRequirements = Array[QualificationRequirement](
-      approvalRateRequirement, localeRequirement, valAgreementRequirement, valTempDisqualifyRequirement
+      approvalRateRequirement, localeRequirement, valAgreementRequirement,
+      valTempDisqualifyRequirement, valAssignmentLimitRequirement
     ),
     autoApprovalDelay = 2592000L, // 30 days
     assignmentDuration = 600L)
@@ -303,7 +322,10 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
   lazy val accuracyTracker: ActorRef = actorSystem.actorOf(
     Props {
-      accuracyTrackerPeek = new QASRLGenerationAccuracyManager[SID](genAccDisqualTypeId)
+      accuracyTrackerPeek = new QASRLGenerationAccuracyManager[SID](
+        genAccDisqualType.getQualificationTypeId,
+        genAssignmentLimitType.getQualificationTypeId,
+        assignLimit)
       accuracyTrackerPeek
     }
   )
@@ -316,6 +338,8 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
       valManagerPeek = new QASRLValidationHITManager(
         valHelper,
         valAgrDisqualType.getQualificationTypeId,
+        valAssignmentLimitType.getQualificationTypeId,
+        assignLimit,
         accuracyTracker,
         // sentenceTracker,
         if(config.isProduction) _ => numValidationAssignmentsForPrompt else _ => 1,
@@ -341,7 +365,9 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
         valHelper,
         valManager,
         genCoverageDisqualType.getQualificationTypeId,
+        genAssignmentLimitType.getQualificationTypeId,
         valTempDisqualifyType.getQualificationTypeId,
+        assignLimit,
         // sentenceTracker,
         if(config.isProduction) _ => numGenerationAssignmentsForPrompt else _ => 1,
         if(config.isProduction) numActivePrompts else 3,
@@ -383,7 +409,16 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   def stop() = {
     genActor ! Stop
     valActor ! Stop
-    genManagerPeek.onStop()
+    revokeAllWorkerQuals(valTempDisqualifyType.getQualificationTypeId,
+      "Restored your ability to validate answers. " +
+      "Thank you for participating.")
+
+    revokeAllWorkerQuals(valAssignmentLimitType.getQualificationTypeId,
+      "Restored your ability to work on future batches of answering questions.")
+
+    revokeAllWorkerQuals(genAssignmentLimitType.getQualificationTypeId,
+      "Restored your ability to work on future batches of writing questions.")
+
     stopSaves
   }
   def delete() = {
