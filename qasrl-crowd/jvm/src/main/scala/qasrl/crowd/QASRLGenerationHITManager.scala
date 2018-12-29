@@ -134,6 +134,10 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
           .withSendNotification(true))
     }
 
+    if (verbsCompleted > assignLimit) {
+      disqualify(assignment.workerId, genAssignLimitDisqualTypeId, false)
+    }
+
     disqualify(assignment.workerId, validationTempDisqualifyTypeId, false)
 
     val validationPrompt = QASRLValidationPrompt(hit.prompt, hit.hitTypeId, hit.hitId, assignment.assignmentId, assignment.response)

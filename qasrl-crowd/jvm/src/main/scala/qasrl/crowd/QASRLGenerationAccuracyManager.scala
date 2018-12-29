@@ -16,7 +16,7 @@ import upickle.default._
 import com.typesafe.scalalogging.StrictLogging
 
 class QASRLGenerationAccuracyManager[SID : Reader : Writer](
-  genDisqualificationTypeId: String, genAssignLimitDisqualType: String, assignLimit: Int)(
+  genDisqualificationTypeId: String)(
   implicit annotationDataService: AnnotationDataService,
   config: TaskConfig,
   settings: QASRLSettings
@@ -57,27 +57,6 @@ class QASRLGenerationAccuracyManager[SID : Reader : Writer](
     assignmentsForHIT.find(_.assignmentId == valPrompt.sourceAssignmentId)
   }
 
-  def disqualify(workerId: String, qualification: String, notify: Boolean = true) = {
-    // This may put a bit pressure on AMT, hopefully, not too much...
-    val res = config.service.listWorkersWithQualificationType(
-      new ListWorkersWithQualificationTypeRequest()
-        .withMaxResults(100)
-        .withQualificationTypeId(qualification))
-
-    val workers = res.getQualifications.asScala.map(_.getWorkerId).toSet
-    if (workers.contains(workerId)) {
-      None
-    } else {
-      logger.info(s"Disqualifying: $qualification from worker: $workerId")
-      Some(config.service.associateQualificationWithWorker(
-        new AssociateQualificationWithWorkerRequest()
-          .withQualificationTypeId(qualification)
-          .withWorkerId(workerId)
-          .withIntegerValue(1)
-          .withSendNotification(notify)))
-    }
-  }
-
   def assessQualification(workerId: String): Unit = {
     Try {
       allWorkerStats.get(workerId).foreach { stats =>
@@ -103,10 +82,6 @@ class QASRLGenerationAccuracyManager[SID : Reader : Writer](
                 .withWorkerId(stats.workerId)
                 .withIntegerValue(1)
                 .withSendNotification(true))
-        }
-
-        if (stats.numAssignmentsCompleted > assignLimit){
-          disqualify(stats.workerId, genAssignLimitDisqualType, false)
         }
       }
     }

@@ -322,10 +322,7 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
   lazy val accuracyTracker: ActorRef = actorSystem.actorOf(
     Props {
-      accuracyTrackerPeek = new QASRLGenerationAccuracyManager[SID](
-        genAccDisqualType.getQualificationTypeId,
-        genAssignmentLimitType.getQualificationTypeId,
-        assignLimit)
+      accuracyTrackerPeek = new QASRLGenerationAccuracyManager[SID](genAccDisqualType.getQualificationTypeId)
       accuracyTrackerPeek
     }
   )
