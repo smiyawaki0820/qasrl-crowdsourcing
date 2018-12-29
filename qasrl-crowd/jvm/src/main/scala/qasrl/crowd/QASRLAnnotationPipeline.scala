@@ -122,7 +122,7 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   val genAccDisqualTypeLabelString = generationAccuracyDisqualTypeLabel.fold("")(x => s"[$x] ")
   val genAccDisqualTypeName = s"${genAccDisqualTypeLabelString}Question-answer writing accuracy disqualification"
   val genAccDisqualType = findQualificationType(genAccDisqualTypeName).getOrElse {
-    System.out.println("Generating generation accuracy disqualification type...")
+    logger.info("Generating generation accuracy disqualification type...")
     createQualification(genAccDisqualTypeName, "Accuracy on the question-answer writing task is too low.")
   }
 
@@ -133,7 +133,7 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   val genCoverageDisqualTypeName = s"${genCoverageDisqualTypeLabelString} Questions asked per verb disqualification"
 
   val genCoverageDisqualType = findQualificationType(genCoverageDisqualTypeName).getOrElse{
-    System.out.println("Generating generation coverage disqualification type...")
+    logger.info("Generating generation coverage disqualification type...")
     createQualification(genCoverageDisqualTypeName, "Number of questions asked for each verb in our question-answer " +
       "pair generation task is too low.")
   }
@@ -143,16 +143,16 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   val valAgrDisqualTypeName = s"${valAgrDisqualTypeLabelString}Question answering agreement disqualification"
 
   val valAgrDisqualType = findQualificationType(valAgrDisqualTypeName).getOrElse{
-    System.out.println("Generating validation disqualification type...")
+    logger.info("Generating validation disqualification type...")
     createQualification(valAgrDisqualTypeName, "Agreement with other annotators on answers and validity " +
       "judgments in our question answering task is too low.")
   }
 
   val valAgreementRequirement = createDisqualificationReq(valAgrDisqualType)
 
-  val valTempDisqualifyTypeName = "Fairness in question validation"
+  val valTempDisqualifyTypeName = "Fairness in question and answers - Temporarily disqualifying from writing answers while you are generating questions"
   val valTempDisqualifyType = findQualificationType(valTempDisqualifyTypeName ).getOrElse{
-    System.out.println("Generating temporary validation disqualification for fairness type...")
+    logger.info("Generating temporary validation disqualification for fairness type...")
     createQualification(valTempDisqualifyTypeName, "To maintain fair play with other annotators, temporary disabling " +
       "question validation task for question writers")
   }
