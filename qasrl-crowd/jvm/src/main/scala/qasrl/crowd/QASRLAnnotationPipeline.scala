@@ -238,7 +238,8 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     reward = settings.generationReward,
     keywords = "language,english,question answering",
     qualRequirements = Array[QualificationRequirement](
-      approvalRateRequirement, localeRequirement, genAccuracyRequirement, genCoverageRequirement
+      approvalRateRequirement, localeRequirement, genAccuracyRequirement,
+      genCoverageRequirement, genAssignmentLimitRequirement
     ),
     autoApprovalDelay = 2592000L, // 30 days
     assignmentDuration = 600L)
