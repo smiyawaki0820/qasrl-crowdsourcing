@@ -141,19 +141,24 @@ def printMTurkHits() = {
 }
 
 def progress() = {
-  val totalPrompts = exp.allPrompts.length
-  val savedPrompts = exp.allGenInfos.length
-  val uploadedGenerationsCount = exp.allGenInfos.length
-  val completedGenerationsCount = exp.allGenInfos.count(_.assignments.nonEmpty)
+  val totalGenPrompts = exp.allPrompts.length * numGenerationsPerPrompt
+  val totalValPrompts = totalGenPrompts * numValidationsPerPrompt
 
+  val uploadedGenerationsCount = exp.allGenInfos.length
+
+  val completedGenerationsCount = exp.allGenInfos.map(_.assignments.length).sum()
+  val completedValidationsCount = exp.allValInfos.map(_.assignments.length).sum()
+
+  val uploadedGenerationsCount = exp.allGenInfos.length
   val uploadedValidationsCount = exp.allValInfos.length
-  val completedValidationsCount = exp.allValInfos.count(_.assignments.nonEmpty)
 
   println(s"Generation HitTypeId: ${exp.genTaskSpec.hitTypeId}")
   println(s"Validation HitTypeId: ${exp.valTaskSpec.hitTypeId}")
 
-  println(f"Generation uploaded / completed / total: $uploadedGenerationsCount / $completedGenerationsCount / $totalPrompts ")
-  println(f"Validation uploaded / completed / total: $uploadedValidationsCount / $completedValidationsCount / $totalPrompts ")
+  println(f"Generation completed / total: $completedGenerationsCount / $totalGenPrompts ")
+  println(f"Validation completed / total: $completedGenerationsCount / $totalGenPrompts ")
+
+  println(f"Uploaded to MTurk: (Generation / Validation): $uploadedGenerationsCount / $uploadedValidationsCount ")
 }
 
 
