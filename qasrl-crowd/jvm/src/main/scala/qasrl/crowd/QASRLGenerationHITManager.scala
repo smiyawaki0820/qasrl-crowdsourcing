@@ -1,26 +1,16 @@
 package qasrl.crowd
 
 import cats.implicits._
-
 import spacro._
 import spacro.tasks._
-
-// import qamr.Pring
-// import qamr.SaveData
-// import qamr.AnnotationDataService
-
-import scala.collection.mutable
-import scala.util.{Try, Success, Failure}
-
 import upickle.default.Reader
-
 import akka.actor.ActorRef
-
-import com.amazonaws.services.mturk.model.AssociateQualificationWithWorkerRequest
-
+import com.amazonaws.services.mturk.model.{AssociateQualificationWithWorkerRequest, DisassociateQualificationFromWorkerRequest, ListWorkersWithQualificationTypeRequest}
 import upickle.default._
-
 import com.typesafe.scalalogging.StrictLogging
+
+import scala.collection.JavaConverters._
+
 
 case class FlagBadSentence[SID](id: SID)
 
@@ -29,6 +19,7 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
   validationHelper: HITManager.Helper[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]],
   validationActor: ActorRef,
   coverageDisqualificationTypeId: String,
+  validationTempDisqualifyTypeId: String,
   // sentenceTrackingActor: ActorRef,
   numAssignmentsForPrompt: QASRLGenerationPrompt[SID] => Int,
   initNumHITsToKeepActive: Int,
@@ -98,6 +89,44 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
     logger.info("Generation data saved.")
   }
 
+  def disqualifyValidationFromWorker(workerId: String) = {
+    // This may put a bit pressure on AMT, hopefully, not too much...
+    // This is called every time a generator submits an assignment.
+    // Every once in a few seconds at best..
+    val res = config.service.listWorkersWithQualificationType(
+      new ListWorkersWithQualificationTypeRequest()
+        .withMaxResults(100)
+        .withQualificationTypeId(validationTempDisqualifyTypeId))
+    val workers = res.getQualifications.asScala.map(_.getWorkerId).toSet
+    if (workers.contains(workerId)) {
+      None
+    } else {
+      Some(config.service.associateQualificationWithWorker(
+        new AssociateQualificationWithWorkerRequest()
+          .withQualificationTypeId(validationTempDisqualifyTypeId)
+          .withWorkerId(workerId)
+          .withIntegerValue(1)
+          .withSendNotification(true)))
+    }
+  }
+
+  def onStop() = {
+    val res = config.service.listWorkersWithQualificationType(
+      new ListWorkersWithQualificationTypeRequest()
+        .withMaxResults(100)
+        .withQualificationTypeId(validationTempDisqualifyTypeId))
+    for (q <- res.getQualifications().asScala){
+      config.service.disassociateQualificationFromWorker(
+        new DisassociateQualificationFromWorkerRequest()
+          .withWorkerId(q.getWorkerId)
+          .withQualificationTypeId(validationTempDisqualifyTypeId)
+          .withReason("Restored your ability to validate answers. " +
+            "Thank you for participating.")
+      )
+
+    }
+  }
+
   override def reviewAssignment(hit: HIT[QASRLGenerationPrompt[SID]], assignment: Assignment[List[VerbQA]]): Unit = {
     evaluateAssignment(hit, startReviewing(assignment), Approval(""))
     if(!assignment.feedback.isEmpty) {
@@ -118,6 +147,9 @@ class QASRLGenerationHITManager[SID : Reader : Writer](
           .withIntegerValue(1)
           .withSendNotification(true))
     }
+
+    disqualifyValidationFromWorker(assignment.workerId)
+
     val validationPrompt = QASRLValidationPrompt(hit.prompt, hit.hitTypeId, hit.hitId, assignment.assignmentId, assignment.response)
     validationActor ! validationHelper.Message.AddPrompt(validationPrompt)
     // sentenceTrackingActor ! ValidationBegun(validationPrompt)

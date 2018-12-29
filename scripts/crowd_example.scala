@@ -39,16 +39,6 @@ implicit val config: TaskConfig = {
   }
 }
 
-def exit = {
-  // actor system has to be terminated for JVM to be able to terminate properly upon :q
-  config.actorSystem.terminate
-  // flush & release logging resources
-  import org.slf4j.LoggerFactory
-  import ch.qos.logback.classic.LoggerContext
-  LoggerFactory.getILoggerFactory.asInstanceOf[LoggerContext].stop
-  System.out.println("Terminated actor system and logging. Type :q to end.")
-}
-
 val numGenerationsPerPrompt = 1
 val numValidationsPerPrompt = 2
 val numActivePrompts = 50
@@ -62,6 +52,17 @@ val setup = new AnnotationSetup(qasrlPath,
 import setup.SentenceIdHasTokens
 
 val exp = setup.experiment
+
+def exit = {
+  exp.stop()
+  // actor system has to be terminated for JVM to be able to terminate properly upon :q
+  config.actorSystem.terminate
+  // flush & release logging resources
+  import org.slf4j.LoggerFactory
+  import ch.qos.logback.classic.LoggerContext
+  LoggerFactory.getILoggerFactory.asInstanceOf[LoggerContext].stop
+  System.out.println("Terminated actor system and logging. Type :q to end.")
+}
 
 // use with caution... intended mainly for sandbox
 def deleteAll = {
@@ -144,10 +145,8 @@ def progress() = {
   val totalGenPrompts = exp.allPrompts.length * numGenerationsPerPrompt
   val totalValPrompts = totalGenPrompts * numValidationsPerPrompt
 
-  val uploadedGenerationsCount = exp.allGenInfos.length
-
-  val completedGenerationsCount = exp.allGenInfos.map(_.assignments.length).sum()
-  val completedValidationsCount = exp.allValInfos.map(_.assignments.length).sum()
+  val completedGenerationsCount = exp.allGenInfos.map(_.assignments.length).sum
+  val completedValidationsCount = exp.allValInfos.map(_.assignments.length).sum
 
   val uploadedGenerationsCount = exp.allGenInfos.length
   val uploadedValidationsCount = exp.allValInfos.length
@@ -156,7 +155,7 @@ def progress() = {
   println(s"Validation HitTypeId: ${exp.valTaskSpec.hitTypeId}")
 
   println(f"Generation completed / total: $completedGenerationsCount / $totalGenPrompts ")
-  println(f"Validation completed / total: $completedGenerationsCount / $totalGenPrompts ")
+  println(f"Validation completed / total: $completedValidationsCount / $totalValPrompts ")
 
   println(f"Uploaded to MTurk: (Generation / Validation): $uploadedGenerationsCount / $uploadedValidationsCount ")
 }
