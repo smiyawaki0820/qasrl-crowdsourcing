@@ -22,6 +22,8 @@ import scala.language.postfixOps
 import scala.collection.JavaConverters._
 import com.typesafe.scalalogging.StrictLogging
 
+import scala.util.Random
+
 class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   val allIds: Vector[SID], // IDs of sentences to annotate
   numGenerationAssignmentsForPrompt: Int,
@@ -62,10 +64,10 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     }.flatten.toSet
   }
 
-  lazy val allPrompts: Vector[QASRLGenerationPrompt[SID]] = for {
+  lazy val allPrompts: Vector[QASRLGenerationPrompt[SID]] = Random.shuffle(for {
     id <- allIds
     verbIndex <- getKeyIndices(id).toList.sorted
-  } yield QASRLGenerationPrompt(id, verbIndex)
+  } yield QASRLGenerationPrompt(id, verbIndex))
 
   lazy val assignLimit: Int = math.max(10, 0.1*allPrompts.length).toInt
   logger.info(s"Assignment Limit: $assignLimit")
