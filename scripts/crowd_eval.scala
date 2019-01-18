@@ -52,7 +52,7 @@ def exit = {
 }
 
 //val genTypeId = "3DCAAKVOXBFBBYTGQJIY30T65H3FYZ"
-val genTypeId = "./data/nrl_generated_0.2.csv"
+val genTypeId = "./data/wikinews.clustered.conflicts.csv"
 val setup = new EvaluationSetup(genTypeId, qasrlPath, liveDataPath)
 
 import setup.SentenceIdHasTokens

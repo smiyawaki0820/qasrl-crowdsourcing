@@ -9,7 +9,7 @@ import nlpdata.datasets.wiktionary
 import nlpdata.util.HasTokens
 import nlpdata.util.HasTokens.ops._
 import nlpdata.util.HasTokens
-import qasrl.crowd.{FileSystemAnnotationDataService, QASRLEvaluationPipeline, QASRLEvaluationPrompt, QASRLGenerationPrompt, QASRLValidationAnswer, QASRLValidationPrompt, SourcedQuestion, VerbQA}
+import qasrl.crowd._
 import spacro.HITInfo
 import spacro.tasks.TaskConfig
 import spacro.util.Span
@@ -20,7 +20,7 @@ import scala.collection.JavaConverters._
 
 case class QA[SID](sentenceId: SID, verbIndex: Int, question: String, answer: Span)
 
-class EvaluationSetup(genTypeId: String,
+class EvaluationSetup(qasrlPath: String,
                       datasetPath: Path,
                       liveDataPath: Path)(
   implicit config: TaskConfig) extends StrictLogging{
@@ -56,26 +56,6 @@ class EvaluationSetup(genTypeId: String,
       answer <- resp.answers
     } yield QA(sid, verbIndex, question, answer)).toVector
     flats
-  }
-
-  private def createEvaluationPrompt[SID](sentenceId: SID,
-                             flats: Vector[QA[SID]])
-  :QASRLEvaluationPrompt[SID] = {
-    // verbIndex, question
-    val sourceQuestions = for {
-      ((verbIndex, question), qas) <- flats.groupBy(f => (f.verbIndex, f.question))
-    } yield SourcedQuestion(verbIndex, question, Set.empty)
-    QASRLEvaluationPrompt(sentenceId, sourceQuestions.toList)
-  }
-
-  private def getEvalPrompts(genTypeId: String): Vector[QASRLEvaluationPrompt[SentenceId]] = {
-    val hitService = config.hitDataService
-    val genPrompts = hitService.getAllHITInfo[QASRLGenerationPrompt[SentenceId], List[VerbQA]](genTypeId).get
-    val flats: Vector[QA[SentenceId]] = flattenHitInfos[SentenceId](genPrompts)
-    val evalPrompts = for {
-      (sentenceId, qaPairsPerSentence) <- flats.groupBy(_.sentenceId)
-    } yield createEvaluationPrompt[SentenceId](sentenceId, qaPairsPerSentence)
-    evalPrompts.toVector
   }
 
   private def getValidationPrompts(genTypeId: String): Vector[QASRLValidationPrompt[SentenceId]] = {
@@ -164,10 +144,10 @@ class EvaluationSetup(genTypeId: String,
     Wiktionary.getInflectionsForTokens(tokens)
   }
 
-  def numEvaluationAssignmentsForPrompt(p: QASRLValidationPrompt[SentenceId]) = 3
+  def numEvaluationAssignmentsForPrompt(p: QASRLValidationPrompt[SentenceId]) = 1
 
-  // sue genTypeId as CSV Path for model generated QA pairs
-  val allPrompts: Vector[QASRLValidationPrompt[SentenceId]] = getValidationPrompts(Paths.get(genTypeId), dataset)
+  // use qasrlPath as CSV Path for QA pairs
+  val allPrompts: Vector[QASRLValidationPrompt[SentenceId]] = getValidationPrompts(Paths.get(qasrlPath), dataset)
   val experiment = new QASRLEvaluationPipeline[SentenceId](
     allPrompts,
     numEvaluationAssignmentsForPrompt)

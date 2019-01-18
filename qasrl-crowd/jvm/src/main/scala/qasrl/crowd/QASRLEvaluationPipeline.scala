@@ -191,7 +191,7 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
         valAgrDisqualTypeId,
         valHelper,
         if(config.isProduction) numValidationsForPrompt else (_ => 1),
-        if(config.isProduction) 100 else 3,
+        if(config.isProduction) 100 else 20,
         allPrompts.iterator)
       valManagerPeek
     })
