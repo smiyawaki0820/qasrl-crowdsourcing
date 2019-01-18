@@ -55,13 +55,14 @@ class QASRLEvaluationClient[SID : Writer : Reader](
   import MultiContigSpanHighlightableSentenceComponent._
 
   lazy val questions = prompt.qaPairs.map(_.question)
+  lazy val proposedAnswers = prompt.qaPairs.map(_.answers)
 
   @Lenses case class State(
     curQuestion: Int,
     isInterfaceFocused: Boolean,
     answers: List[QASRLValidationAnswer])
   object State {
-    def initial = State(0, false, questions.map(_ => Answer(List.empty[Span])))
+    def initial = State(0, false, proposedAnswers.map(spans => Answer(spans)))
   }
 
   def answerSpanOptics(questionIndex: Int) =
@@ -185,7 +186,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
               SpanHighlighting(
                 SpanHighlightingProps(
                   isEnabled = !isNotAssigned && answers(curQuestion).isAnswer,
-                  enableSpanOverlap = false,
+                  enableSpanOverlap = true,
                   update = updateCurrentAnswers, render = {
                     case (hs @ SpanHighlightingState(spans, status), SpanHighlightingContext(_, hover, touch, cancelHighlight)) =>
                       val curVerbIndex = prompt.qaPairs(curQuestion).verbIndex

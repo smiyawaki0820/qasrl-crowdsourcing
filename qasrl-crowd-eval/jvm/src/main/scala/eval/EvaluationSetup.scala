@@ -113,11 +113,9 @@ class EvaluationSetup(genTypeId: String,
     val allRecords = CSVReader.open(qaPairsCsvPath.toString).allWithHeaders()
     val qaPairs = (for {
       rec <- allRecords
-      sentId = rec("ecb_id")
+      sentId = rec("qasrl_id")
       sent = dataset(sentId)
-      verb = rec("verb")
-      verbIdx = sent.indexOf(verb)
-      if verbIdx >= 0
+      verbIdx = rec("verb_idx").toInt
       question = rec("question")
       answerRanges = rec("answer_range")
       answerSpan <- decodeAnswerRange(answerRanges )
@@ -128,11 +126,9 @@ class EvaluationSetup(genTypeId: String,
       (sentId, verbIdx) = key
       verbQas = getVerbQas(verbIdx, qaGroup)
       genPrompt = QASRLGenerationPrompt[SentenceId](sentId, verbIdx)
-
-    } yield QASRLValidationPrompt[SentenceId](genPrompt,"model_generated",
-      "model_generated_hit",
-      "model_generated_assign", verbQas)
-
+    } yield QASRLValidationPrompt[SentenceId](genPrompt,"consolidated_crowd",
+      "consolidated_crowd_hit_id",
+      "consolidated_crowd_assign_id", verbQas)
     valPrompts.toVector
   }
 
@@ -140,19 +136,17 @@ class EvaluationSetup(genTypeId: String,
     logger.info(s"Reading dataset from: $datasetPath")
     val reader: CSVReader = CSVReader.open(datasetPath.toString)
     // CSV format:
-    // file_name, sent_id, sentence
-    // 10_13ecbplus.xml,0,Report: Red Sox offer Teixeira $200 million
+    // qasrl_id, tokens, sentence
+    // 10_13ecbplus.xml_0,Report : Red Sox offer Teixeira $ 200 million,Report: Red Sox offer Teixeira $200 million
     val csvRecords = reader.allWithHeaders()
     (for {
       rec <- csvRecords
-      id = rec("file_name") + "_" + rec("sent_id")
-      sent = rec("sentence")
-      tokens: Vector[String] = Tokenizer.tokenize(sent)
+      id = rec("qasrl_id")
+      tokens: Vector[String] = rec("tokens").split(" ").toVector
     } yield id -> tokens).toMap
   }
 
   val allIds: Vector[SentenceId] = dataset.keys.map(SentenceId(_)).toVector
-
 
   lazy val Wiktionary = new wiktionary.WiktionaryFileSystemService(
     resourcePath.resolve("wiktionary")
@@ -179,8 +173,5 @@ class EvaluationSetup(genTypeId: String,
     numEvaluationAssignmentsForPrompt)
 
   val exp = experiment
-
-
-
 
 }

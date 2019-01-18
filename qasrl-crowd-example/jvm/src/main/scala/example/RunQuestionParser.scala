@@ -37,8 +37,11 @@ object RunQuestionParser extends App with StrictLogging{
     rec("qasrl_id") -> rec("tokens").split(" ").toVector).toMap
 
   val records: Vector[QA] = (for (rec <- recordsReader.allWithHeaders())
-      yield QA(rec("qasrl_id"), rec("verb_idx").toInt, rec("verb"), rec("question"), rec("source_assign_id"))
-    ).toVector.filter(qa => qa.qasrlId == "Wiki1k:wikinews:1002218:1:0" && qa.verbIdx == 1)
+      yield QA(rec("qasrl_id"),
+        rec("verb_idx").toInt,
+        rec("verb"),
+        rec("question"),
+        rec("source_assign_id"))).toVector
 
   // Header for CSV that would be printed on screen
   println("qasrl_id,verb_idx,question,source_assign_id,wh,subj,aux,verb_prefix,verb,obj,prep,obj2," +
@@ -52,7 +55,7 @@ object RunQuestionParser extends App with StrictLogging{
 
       val verbInflectedForms = inflections.getInflectedForms(verb.lowerCase).get
       for ((sourceId, q) <- predRecords.map(r => (r.sourceId, r.question)).distinct) {
-        val qTokens = q.split(" ").toVector.map(_.lowerCase)
+        val qTokens = q.init.split(" ").toVector.map(_.lowerCase)
         val qPreps = qTokens.filter(TemplateStateMachine.allPrepositions.contains).toSet
         val qPrepBigrams = qTokens.sliding(2)
           .filter(_.forall(TemplateStateMachine.allPrepositions.contains))
