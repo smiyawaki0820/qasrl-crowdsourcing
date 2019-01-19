@@ -176,6 +176,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
     def stylesForConflicts(state: State): Int => TagMod = {
       val allSpans = state.answers.flatMap{
         case Answer(spans) => spans
+        case InvalidQuestion => List.empty[Span]
       }.toVector
       val tokens = allSpans.flatMap(span => span.begin to (span.end + 1))
 
@@ -187,7 +188,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
       val curVerbIndex = prompt.qaPairs(state.curQuestion).verbIndex
 
       idx: Int => if (conflicts.contains(idx)) {
-        TagMod(Styles.badRed).when(conflicts.contains(idx))
+        TagMod(Styles.badRed)
       } else {
         TagMod(Styles.specialWord, Styles.niceBlue).when(idx == curVerbIndex)
       }
