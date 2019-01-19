@@ -178,7 +178,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
         case Answer(spans) => spans
         case InvalidQuestion => List.empty[Span]
       }.toVector
-      val tokens = allSpans.flatMap(span => span.begin to (span.end + 1))
+      val tokens = allSpans.flatMap(span => span.begin to span.end )
 
       val conflicts : Set[Int] = (for  {
         (token, tokenGroup) <- tokens.groupBy(identity)
