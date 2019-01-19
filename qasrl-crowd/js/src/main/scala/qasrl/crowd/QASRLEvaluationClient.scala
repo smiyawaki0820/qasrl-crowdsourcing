@@ -4,11 +4,12 @@ import qasrl.crowd.util.dollarsToCents
 import qasrl.crowd.util.MultiContigSpanHighlightableSentenceComponent
 import qasrl.crowd.util.Styles
 import qasrl.crowd.util.implicits._
-
 import spacro.tasks._
-import spacro.ui._
-import spacro.util.Span
+import spacro.ui.AsyncContentComponent
 
+import scala.collection.immutable
+//import spacro.ui._
+import spacro.util.Span
 import cats.implicits._
 
 import nlpdata.util.Text
@@ -49,13 +50,15 @@ class QASRLEvaluationClient[SID : Writer : Reader](
 
   val AsyncContentComponent = new AsyncContentComponent[QASRLValidationAjaxResponse]
   import AsyncContentComponent._
-  val SpanHighlightingComponent = new SpanHighlightingComponent[Int] // question
-  import SpanHighlightingComponent._
+
 
   import MultiContigSpanHighlightableSentenceComponent._
 
   lazy val questions = prompt.qaPairs.map(_.question)
   lazy val proposedAnswers = prompt.qaPairs.map(_.answers)
+
+  val SpanHighlightingComponent = new SpanHighlightingComponent2(proposedAnswers) // question
+  import SpanHighlightingComponent._
 
   @Lenses case class State(
     curQuestion: Int,
@@ -170,6 +173,26 @@ class QASRLEvaluationClient[SID : Writer : Reader](
       )
     }
 
+    def stylesForConflicts(state: State): Int => TagMod = {
+      val allSpans = state.answers.flatMap{
+        case Answer(spans) => spans
+      }.toVector
+      val tokens = allSpans.flatMap(span => span.begin to (span.end + 1))
+
+      val conflicts : Set[Int] = (for  {
+        (token, tokenGroup) <- tokens.groupBy(identity)
+        if tokenGroup.size > 1
+      } yield token ).toSet
+
+      val curVerbIndex = prompt.qaPairs(state.curQuestion).verbIndex
+
+      idx: Int => if (conflicts.contains(idx)) {
+        TagMod(Styles.badRed).when(conflicts.contains(idx))
+      } else {
+        TagMod(Styles.specialWord, Styles.niceBlue).when(idx == curVerbIndex)
+      }
+    }
+
     def render(state: State) = {
       AsyncContent(
         AsyncContentProps(
@@ -187,8 +210,10 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                 SpanHighlightingProps(
                   isEnabled = !isNotAssigned && answers(curQuestion).isAnswer,
                   enableSpanOverlap = true,
-                  update = updateCurrentAnswers, render = {
+                  update = updateCurrentAnswers,
+                  render = {
                     case (hs @ SpanHighlightingState(spans, status), SpanHighlightingContext(_, hover, touch, cancelHighlight)) =>
+
                       val curVerbIndex = prompt.qaPairs(curQuestion).verbIndex
                       val inProgressAnswerOpt = SpanHighlightingStatus.highlighting.getOption(status).map {
                         case Highlighting(_, anchor, endpoint) => Span(anchor, endpoint)
@@ -280,7 +305,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                           MultiContigSpanHighlightableSentence(
                             MultiContigSpanHighlightableSentenceProps(
                               sentence = sentence,
-                              styleForIndex = i => TagMod(Styles.specialWord, Styles.niceBlue).when(i == curVerbIndex),
+                              styleForIndex = stylesForConflicts(state),
                               highlightedSpans = (
                                 inProgressAnswerOpt.map(_ -> (^.backgroundColor := "#FF8000")) ::
                                 (curAnswers.map(_ -> (^.backgroundColor := "#FFFF00")) ++

@@ -28,9 +28,9 @@ object RunSetup extends App {
 
   val BATCH_NUMBER = 0
 
-  val annotationPath = Paths.get(s"data/annotations/ecb_${BATCH_NUMBER}")
-  val liveDataPath = Paths.get(s"data/live/ecb_${BATCH_NUMBER}")
-  val qasrlPath = Paths.get(s"data/ecb/ECBPlus.qasrl.batch_${BATCH_NUMBER}.csv")
+  val annotationPath = Paths.get(s"data/annotations/wikinews")
+  val liveDataPath = Paths.get(s"data/live/wikinwews")
+  val qasrlPath = Paths.get(s"data/wikinews.dev.data.csv")
 
   implicit val timeout = akka.util.Timeout(5.seconds)
   implicit val config: TaskConfig = {
@@ -42,7 +42,7 @@ object RunSetup extends App {
       SandboxTaskConfig(projectName, domain, interface, httpPort, httpsPort, hitDataService)
     }
   }
-  val genTypeId = "./data/nrl_generated_0.2.csv"
+  val genTypeId = "./data/wikinews.clustered.conflicts.csv"
   val setup = new EvaluationSetup(genTypeId, qasrlPath, liveDataPath)
 
   import setup.SentenceIdHasTokens

@@ -75,7 +75,8 @@ class EvaluationSetup(qasrlPath: String,
     val encodedSpans: Vector[String] = answerRange.split("~!~").toVector
     val spans = encodedSpans.map( encSpan => {
       val splits = encSpan.split(':').toVector
-      Span(splits(0).toInt, splits(1).toInt)
+      // this project uses exclusive indices
+      Span(splits(0).toInt, splits(1).toInt - 1)
     })
     spans
   }
