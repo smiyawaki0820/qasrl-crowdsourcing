@@ -86,7 +86,7 @@ object DataIO extends LazyLogging {
     sb.toString
   }
 
-  private def idAndVerb[SID:HasTokens](r: HITInfo[QASRLGenerationPrompt[SID], List[VerbQA]]): (SID, Int) = {
+  private def idAndVerb[SID](r: HITInfo[QASRLGenerationPrompt[SID], List[VerbQA]]): (SID, Int) = {
     (r.hit.prompt.id, r.hit.prompt.verbIndex)
   }
 
