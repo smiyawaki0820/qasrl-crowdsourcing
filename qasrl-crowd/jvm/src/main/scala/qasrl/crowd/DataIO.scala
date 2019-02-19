@@ -3,26 +3,30 @@ package qasrl.crowd
 import qasrl.Frame
 import qasrl.QuestionProcessor
 import qasrl.TemplateStateMachine
-import qasrl.labeling.QuestionLabelMapper
-
+import qasrl.labeling.{QuestionLabelMapper, SlotBasedLabel}
 import qasrl.crowd.util.CategoricalDistribution
 import qasrl.crowd.util.implicits._
-
 import cats.Foldable
 import cats.data.NonEmptyList
 import cats.implicits._
-
-import spacro.HITInfo
+import spacro.{Assignment, HITInfo}
 import spacro.util.Span
-
 import nlpdata.datasets.wiktionary.Inflections
 import nlpdata.datasets.wiktionary.InflectedForms
 import nlpdata.util.HasTokens.ops._
 import nlpdata.util.LowerCaseStrings._
-import nlpdata.util.HasTokens
-import nlpdata.util.Text
-
+import nlpdata.util.{HasTokens, LowerCaseStrings, Text}
 import com.typesafe.scalalogging.LazyLogging
+
+import scala.collection.immutable
+
+
+case class QASRL(sid: String, verbIdx: Int, verb: String,
+                 workerId: String, assignId: String,
+                 question: String, answerRanges: String, answers: String,
+                 subj: String, obj: String, obj2: String,
+                 aux: String, prep: String, verbPrefix: String,
+                 isPassive: Boolean, isNegated: Boolean)
 
 @deprecated("Use JSON format instead; see JsonCodecs in QASRLDataset.scala", "qasrl-crowd 0.1")
 object DataIO extends LazyLogging {
@@ -80,6 +84,75 @@ object DataIO extends LazyLogging {
       }
     }
     sb.toString
+  }
+
+  private def idAndVerb[SID:HasTokens](r: HITInfo[QASRLGenerationPrompt[SID], List[VerbQA]]): (SID, Int) = {
+    (r.hit.prompt.id, r.hit.prompt.verbIndex)
+  }
+
+  private def getText(span: Span, tokens: Vector[String]) = {
+    tokens.slice(span.begin, span.end + 1).mkString(" ")
+  }
+
+  private def getRangeAsText(span: Span) = {
+    s"${span.begin}:${span.end + 1}"
+  }
+
+  def makeGenerationQAPairTSV[SID: HasTokens] (
+      writeId: SID => String, // serialize sentence ID for distribution in data file
+      genInfos: List[HITInfo[QASRLGenerationPrompt[SID], List[VerbQA]]])(
+      implicit inflections: Inflections): Iterable[QASRL] = {
+
+    for {
+      ((sid, verbIndex), hitInfos) <- genInfos.groupBy(idAndVerb)
+      idString = writeId(sid)
+      sTokens = sid.tokens
+      HITInfo(genHIT, genAssignments) <- hitInfos.sortBy(_.hit.prompt.verbIndex)
+      verb = sTokens(verbIndex).lowerCase
+      inflForms: InflectedForms <- inflections.getInflectedForms(verb).toList
+      genAssignment <- genAssignments.sortBy(_.workerId)
+      workerId = genAssignment.workerId
+      assignId = genAssignment.assignmentId
+      verbQA: VerbQA <- genAssignment.response
+      question = verbQA.question
+      // take the question string without the '?' character. Last token might be a preposition.
+      // We will not identify it if it contains '?' character
+      prepositions: Set[LowerCaseString] = getAllPrepositions(question)
+      stateMachine = new TemplateStateMachine(sTokens, inflForms, Some(prepositions))
+      template = new QuestionProcessor(stateMachine)
+      goodStatesOpt = template.processStringFully(question).toOption
+      slotOpt <- SlotBasedLabel.getSlotsForQuestion(sTokens, inflForms, List(question))
+      slot <- slotOpt
+      goodStates <- goodStatesOpt
+      frame: Frame = goodStates.toList.collect {
+        case QuestionProcessor.CompleteState(_, someFrame, _) => someFrame
+      }.head
+    } yield {
+      val subj = slot.subj.getOrElse("")
+      val aux = slot.aux.getOrElse("")
+      val verbPrefix = slot.verbPrefix
+      val obj = slot.obj.getOrElse("")
+      val prep = slot.prep.getOrElse("")
+      val obj2 = slot.obj2.getOrElse("")
+      val answerRanges = verbQA.answers.map(getRangeAsText).mkString("~!~")
+      val answers = verbQA.answers.map(getText(_, sTokens)).mkString("~!~")
+      QASRL(idString, verbIndex, verb.toString, workerId, assignId, question, answerRanges, answers,
+        subj.toString, obj.toString, obj2.toString,
+        aux.toString, prep.toString, verbPrefix.toString(),
+        frame.isPassive, frame.isNegated)
+    }
+  }
+
+
+  private def getAllPrepositions[SID: HasTokens](question: String) = {
+    val qTokens = question.init.split(" ").toVector.map(_.lowerCase)
+    val qPreps = qTokens.filter(TemplateStateMachine.allPrepositions.contains).toSet
+    val qPrepBigrams = qTokens.sliding(2)
+      .filter(_.forall(TemplateStateMachine.allPrepositions.contains))
+      .map(_.mkString(" ").lowerCase)
+      .toSet
+    val prepositions = qPreps ++ qPrepBigrams
+    prepositions
   }
 
   def makeQAPairTSV[SID : HasTokens, QuestionLabel](

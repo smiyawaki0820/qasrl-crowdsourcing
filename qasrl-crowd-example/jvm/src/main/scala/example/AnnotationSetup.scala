@@ -2,17 +2,18 @@ package example
 
 import java.nio.file.{Files, Path, Paths}
 
-import com.github.tototoshi.csv.CSVReader
+import com.github.tototoshi.csv.{CSVReader, CSVWriter}
 import com.typesafe.scalalogging.StrictLogging
 import nlpdata.datasets.wiktionary
 import nlpdata.util.HasTokens
 import nlpdata.util.HasTokens.ops._
-import qasrl.crowd._
+import qasrl.crowd.{_}
 import qasrl.labeling._
 import spacro._
 import spacro.tasks._
 import upickle.default._
 
+import scala.collection.immutable
 import scala.language.postfixOps
 import scala.util.Try
 
@@ -82,6 +83,27 @@ class AnnotationSetup(datasetPath: Path, liveDataPath: Path,
     numValidationsPerPrompt,
     numActivePrompts,
     liveAnnotationDataService)
+
+  val qasrlColumns = List(
+    "qasrl_id", "verb_idx", "verb",
+    "worker_id", "assign_id",
+    "question", "answer_range", "answer",
+    "subj", "obj", "obj2", "aux", "prep", "verb_prefix",
+    "is_passive", "is_negated")
+
+  def saveGenerationData(
+    filename: String,
+    genInfos: List[HITInfo[QASRLGenerationPrompt[SentenceId], List[VerbQA]]]
+  ): Unit = {
+    val contents = DataIO.makeGenerationQAPairTSV(SentenceId.toString, genInfos)
+    val path = liveDataPath.resolve(filename).toString
+    val csv = CSVWriter.open(path, encoding = "utf-8")
+    csv.writeRow(qasrlColumns)
+    for (qasrl <- contents) {
+      // will iterate in order over the case class fields
+      csv.writeRow(qasrl.productIterator.toList)
+    }
+  }
 
   def saveAnnotationData[A](
     filename: String,

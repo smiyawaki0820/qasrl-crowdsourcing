@@ -141,6 +141,11 @@ def printMTurkHits() = {
   }
 }
 
+def saveGenerationData(filename: String) = {
+  val nonEmptyGens = exp.allGenInfos.filter(_.assignments.nonEmpty)
+  setup.saveGenerationData(filename, nonEmptyGens)
+}
+
 def progress() = {
   val totalGenPrompts = exp.allPrompts.length * numGenerationsPerPrompt
   val totalValPrompts = totalGenPrompts * numValidationsPerPrompt
