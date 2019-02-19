@@ -138,7 +138,7 @@ object DataIO extends LazyLogging {
       val answers = verbQA.answers.map(getText(_, sTokens)).mkString("~!~")
       QASRL(idString, verbIndex, verb.toString, workerId, assignId, question, answerRanges, answers,
         subj.toString, obj.toString, obj2.toString,
-        aux.toString, prep.toString, verbPrefix.toString(),
+        aux.toString, prep.toString, verbPrefix.mkString("~!~"),
         frame.isPassive, frame.isNegated)
     }
   }
