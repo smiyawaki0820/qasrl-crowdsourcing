@@ -19,12 +19,13 @@ import nlpdata.util.{HasTokens, LowerCaseStrings, Text}
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.collection.immutable
+import scala.reflect.macros.whitebox
 
 
 case class QASRL(sid: String, verbIdx: Int, verb: String,
                  workerId: String, assignId: String,
                  question: String, answerRanges: String, answers: String,
-                 subj: String, obj: String, obj2: String,
+                 wh: String, subj: String, obj: String, obj2: String,
                  aux: String, prep: String, verbPrefix: String,
                  isPassive: Boolean, isNegated: Boolean)
 
@@ -128,17 +129,18 @@ object DataIO extends LazyLogging {
         case QuestionProcessor.CompleteState(_, someFrame, _) => someFrame
       }.head
     } yield {
-      val subj = slot.subj.getOrElse("")
-      val aux = slot.aux.getOrElse("")
-      val verbPrefix = slot.verbPrefix
-      val obj = slot.obj.getOrElse("")
-      val prep = slot.prep.getOrElse("")
-      val obj2 = slot.obj2.getOrElse("")
+      val subj = slot.subj.getOrElse("".lowerCase)
+      val aux = slot.aux.getOrElse("".lowerCase)
+      val verbPrefix = slot.verbPrefix.mkString("~!~")
+      val obj = slot.obj.getOrElse("".lowerCase)
+      val prep = slot.prep.getOrElse("".lowerCase)
+      val obj2 = slot.obj2.getOrElse("".lowerCase)
       val answerRanges = verbQA.answers.map(getRangeAsText).mkString("~!~")
       val answers = verbQA.answers.map(getText(_, sTokens)).mkString("~!~")
-      QASRL(idString, verbIndex, verb.toString, workerId, assignId, question, answerRanges, answers,
-        subj.toString, obj.toString, obj2.toString,
-        aux.toString, prep.toString, verbPrefix.mkString("~!~"),
+      QASRL(idString, verbIndex, verb,
+        workerId, assignId, question, answerRanges, answers,
+        slot.wh, subj, obj, obj2,
+        aux, prep, verbPrefix,
         frame.isPassive, frame.isNegated)
     }
   }

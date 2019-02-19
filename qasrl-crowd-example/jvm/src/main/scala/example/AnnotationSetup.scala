@@ -88,7 +88,7 @@ class AnnotationSetup(datasetPath: Path, liveDataPath: Path,
     "qasrl_id", "verb_idx", "verb",
     "worker_id", "assign_id",
     "question", "answer_range", "answer",
-    "subj", "obj", "obj2", "aux", "prep", "verb_prefix",
+    "wh", "subj", "obj", "obj2", "aux", "prep", "verb_prefix",
     "is_passive", "is_negated")
 
   def saveGenerationData(
