@@ -1,40 +1,39 @@
 package qasrl.crowd
 
+import akka.actor._
+import cats.implicits._
+import com.amazonaws.services.mturk.model._
+import com.typesafe.scalalogging.StrictLogging
+import nlpdata.datasets.wiktionary.Inflections
+import nlpdata.structure._
+import nlpdata.util.HasTokens.ops._
+import nlpdata.util.LowerCaseStrings._
+import nlpdata.util.{HasTokens, PosTags, Text}
 import qasrl.crowd.util.PosTagger
 import qasrl.crowd.util.implicits._
-import cats.implicits._
-import akka.actor._
-import com.amazonaws.services.mturk.model._
-import nlpdata.structure._
-import nlpdata.util.HasTokens
-import nlpdata.util.HasTokens.ops._
-import nlpdata.util.Text
-import nlpdata.util.PosTags
-import nlpdata.util.LowerCaseStrings._
-import nlpdata.datasets.wiktionary.Inflections
 import spacro._
 import spacro.tasks._
 import spacro.util.Span
 import upickle.default._
 
+import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import scala.collection.JavaConverters._
-import com.typesafe.scalalogging.StrictLogging
-
 import scala.util.Random
 
-class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
+sealed trait Phase { }
+case object Trap extends Phase{ }
+case object Training extends Phase { }
+case object Production extends Phase { }
+
+
+class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
   val allIds: Vector[SID], // IDs of sentences to annotate
   numGenerationAssignmentsForPrompt: Int,
-  numValidationAssignmentsForPrompt: Int,
   numActivePrompts: Int,
+  phase: Phase,
   annotationDataService: AnnotationDataService,
-  frozenGenerationHITTypeId: Option[String] = None,
-  frozenValidationHITTypeId: Option[String] = None,
-  generationAccuracyDisqualTypeLabel: Option[String] = None,
-  generationCoverageDisqualTypeLabel: Option[String] = None,
-  validationAgreementDisqualTypeLabel: Option[String] = None)(
+  frozenGenerationHITTypeId: Option[String] = None)(
   implicit val config: TaskConfig,
   val settings: QASRLSettings,
   val inflections: Inflections
@@ -69,7 +68,7 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     verbIndex <- getKeyIndices(id).toList.sorted
   } yield QASRLGenerationPrompt(id, verbIndex))
 
-  lazy val assignLimit: Int = math.max(10, 0.1*allPrompts.length).toInt
+  lazy val assignLimit: Int = allPrompts.length
   logger.info(s"Assignment Limit: $assignLimit")
 
   implicit val ads = annotationDataService
@@ -100,10 +99,11 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     found
   }
 
-  private def createDisqualificationReq(qualification: QualificationType): QualificationRequirement = {
+  private def createQualificationReq(qualification: QualificationType, shouldHave: Boolean): QualificationRequirement = {
+    val comparator = if (shouldHave) "Exists" else "DoesNotExist"
     val req = new QualificationRequirement()
       .withQualificationTypeId(qualification.getQualificationTypeId)
-      .withComparator("DoesNotExist")
+      .withComparator(comparator)
       .withRequiredToPreview(false)
     req
   }
@@ -124,57 +124,38 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     .withLocaleValues(new Locale().withCountry("IN"))
     .withRequiredToPreview(false)
 
-  val genAccDisqualTypeLabelString = generationAccuracyDisqualTypeLabel.fold("")(x => s"[$x] ")
-  val genAccDisqualTypeName = s"${genAccDisqualTypeLabelString}Question-answer writing accuracy disqualification"
-  val genAccDisqualType = findQualificationType(genAccDisqualTypeName).getOrElse {
-    logger.info("Generating generation accuracy disqualification type...")
-    createQualification(genAccDisqualTypeName, "Accuracy on the question-answer writing task is too low.")
-  }
 
-  val genAccuracyRequirement = createDisqualificationReq(genAccDisqualType)
-
-  val genCoverageDisqualTypeLabelString = generationCoverageDisqualTypeLabel.fold("")(x => s"[$x] ")
-  val genCoverageDisqualTypeName = s"${genCoverageDisqualTypeLabelString} Questions asked per verb disqualification"
+  val genCoverageDisqualTypeName = "Questions asked per verb disqualification"
 
   val genCoverageDisqualType = findQualificationType(genCoverageDisqualTypeName).getOrElse{
     logger.info("Generating generation coverage disqualification type...")
     createQualification(genCoverageDisqualTypeName, "Number of questions asked for each verb in our question-answer " +
       "pair generation task is too low.")
   }
-  val genCoverageRequirement = createDisqualificationReq(genCoverageDisqualType)
+  val genCoverageRequirement = createQualificationReq(genCoverageDisqualType, false)
 
-  val genAssignmentLimitTypeName = "Diversity of annotators in collected questions"
-  val genAssignmentLimitType = findQualificationType(genAssignmentLimitTypeName).getOrElse{
-    logger.info(s"Generating $genAssignmentLimitTypeName...")
-    createQualification(genAssignmentLimitTypeName , "Ensure a diverse annotator pool for writing questions")
-  }
-  val genAssignmentLimitRequirement = createDisqualificationReq(genAssignmentLimitType)
+  val genTrainingQualName = "Training and Qualification Phase for annotators in question generation"
+  val genProductionQualName = "Production Phase for annotators in question generation"
 
-  val valAgrDisqualTypeLabelString = validationAgreementDisqualTypeLabel.fold("")(x => s"[$x] ")
-  val valAgrDisqualTypeName = s"${valAgrDisqualTypeLabelString}Question answering agreement disqualification"
-
-  val valAgrDisqualType = findQualificationType(valAgrDisqualTypeName).getOrElse{
-    logger.info("Generating validation disqualification type...")
-    createQualification(valAgrDisqualTypeName, "Agreement with other annotators on answers and validity " +
-      "judgments in our question answering task is too low.")
+  val genTrainingQualType = findQualificationType(genTrainingQualName).getOrElse{
+    logger.info("Generating generation training qualification type...")
+    createQualification(genTrainingQualName,
+      description="""Access granted to the training and qualification rounds
+        |in writing questions and answers""".stripMargin)
   }
 
-  val valAgreementRequirement = createDisqualificationReq(valAgrDisqualType)
-
-  val valTempDisqualifyTypeName = "Fairness in question and answers - Temporarily disqualifying from writing answers while you are generating questions"
-  val valTempDisqualifyType = findQualificationType(valTempDisqualifyTypeName ).getOrElse{
-    logger.info("Generating temporary validation disqualification for fairness type...")
-    createQualification(valTempDisqualifyTypeName, "To maintain fair play with other annotators, temporary disabling " +
-      "question validation task for question writers")
+  val genProductionQualType = findQualificationType(genProductionQualName).getOrElse{
+    logger.info("Generating generation production qualification type...")
+    createQualification(genProductionQualName,
+      description="""Access granted to the live annotation round
+          |in writing questions and answers""".stripMargin)
   }
-  val valTempDisqualifyRequirement = createDisqualificationReq(valTempDisqualifyType)
 
-  val valAssignmentLimitTypeName = "Diversity of annotators in collected answers"
-  val valAssignmentLimitType = findQualificationType(valAssignmentLimitTypeName).getOrElse{
-    logger.info(s"Generating $valAssignmentLimitTypeName...")
-    createQualification(valAssignmentLimitTypeName , "Ensure a diverse annotator pool for writing answers")
-  }
-  val valAssignmentLimitRequirement = createDisqualificationReq(valAssignmentLimitType)
+  val InTrainingReq = createQualificationReq(genTrainingQualType, shouldHave = true)
+  val NotInTrainingReq = createQualificationReq(genTrainingQualType, shouldHave = false)
+  val InProductionReq = createQualificationReq(genProductionQualType, shouldHave = true)
+  val NotInProductionReq = createQualificationReq(genProductionQualType, shouldHave = false)
+
 
   def revokeAllWorkerQuals(qualTypeId: String, reason: String = "") = {
     val quals = config.service.listWorkersWithQualificationType(
@@ -194,10 +175,9 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
   // NOTE may need to call multiple times to cover all workers... sigh TODO pagination
   def resetAllQualificationValues = {
-    revokeAllWorkerQuals(genAccDisqualType.getQualificationTypeId)
     revokeAllWorkerQuals(genCoverageDisqualType.getQualificationTypeId)
-    revokeAllWorkerQuals(valAgrDisqualType.getQualificationTypeId)
-    revokeAllWorkerQuals(valTempDisqualifyType.getQualificationTypeId)
+    revokeAllWorkerQuals(genTrainingQualType.getQualificationTypeId)
+    revokeAllWorkerQuals(genProductionQualType.getQualificationTypeId)
   }
 
   lazy val (taskPageHeadLinks, taskPageBodyLinks) = {
@@ -228,23 +208,51 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     (headLinks, bodyLinks)
   }
 
-  val genHITType = HITType(
-    title = s"Write question-answer pairs about a verb",
-    description = s"""
+  val genHITType = selectHitType(phase)
+
+  private def selectHitType(phase: Phase) = {
+    val titleSuffix = phase match {
+      case Training => "[Qualification] "
+      case Production => "[Production]"
+      case default => ""
+    }
+    val descriptionPrefix = phase match {
+      case Training => """[Training and qualification]
+        |Your work will be reviewed by expert annotators. Read carefully the supplied instructions and act according to
+        |the received feedback. Successful accomplishment of this training round is essential to
+        |access more hits in the annotation rounds""".stripMargin
+      case Production =>
+        s"""[Production phase]
+           |Your work will be sampled and reviewed by expert annotators. From time to time you will receive feedback
+           |concerning your work. You are expected to read and act accordingly.
+         """.stripMargin
+      case default => ""
+    }
+
+    val phaseRequirements = phase match {
+      case Training => List(InTrainingReq, NotInProductionReq)
+      case Production => List(InProductionReq, NotInTrainingReq)
+      case default => List(NotInProductionReq, NotInTrainingReq)
+    }
+
+    HITType(
+      title = s"Write question-answer pairs about a verb ${titleSuffix}",
+      description =s"""${descriptionPrefix}
+
       Given a sentence and a verb from that sentence,
       write questions and answers about that verb.
       Questions must adhere to a certain template,
       provided by autocomplete functionality.
       Maintain high accuracy to stay qualified.
     """.trim.replace("\\s+", " "),
-    reward = settings.generationReward,
-    keywords = "language,english,question answering",
-    qualRequirements = Array[QualificationRequirement](
-      approvalRateRequirement, localeRequirement, genAccuracyRequirement,
-      genCoverageRequirement, genAssignmentLimitRequirement
-    ),
-    autoApprovalDelay = 2592000L, // 30 days
-    assignmentDuration = 600L)
+      reward = settings.generationReward,
+      keywords = "language,english,question answering",
+      qualRequirements = Array[QualificationRequirement](
+        approvalRateRequirement, localeRequirement, genCoverageRequirement)
+        ++ phaseRequirements,
+      autoApprovalDelay = 2592000L, // 30 days
+      assignmentDuration = 600L)
+  }
 
   lazy val genAjaxService = new Service[QASRLGenerationAjaxRequest[SID]] {
     override def processRequest(request: QASRLGenerationAjaxRequest[SID]) = request match {
@@ -273,50 +281,6 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     }
   }
 
-  // validation task definition
-
-  val valHITType = HITType(
-    title = s"Answer simple questions about a sentence",
-    description = s"""
-      Given a sentence and several questions about it,
-      highlight the part of the sentence that answers each question,
-      and mark questions that are invalid or redundant.
-      Maintain high agreement with others to stay qualified.
-    """.trim,
-    reward = settings.validationReward,
-    keywords = "language,english,question answering",
-    qualRequirements = Array[QualificationRequirement](
-      approvalRateRequirement, localeRequirement, valAgreementRequirement,
-      valTempDisqualifyRequirement, valAssignmentLimitRequirement
-    ),
-    autoApprovalDelay = 2592000L, // 30 days
-    assignmentDuration = 600L)
-
-  lazy val valAjaxService = new Service[QASRLValidationAjaxRequest[SID]] {
-    override def processRequest(request: QASRLValidationAjaxRequest[SID]) = request match {
-      case QASRLValidationAjaxRequest(workerIdOpt, id) =>
-        val workerInfoSummaryOpt = for {
-          valManagerP <- Option(valManagerPeek)
-          workerId <- workerIdOpt
-          info <- valManagerP.allWorkerInfo.get(workerId)
-        } yield info.summary
-
-        QASRLValidationAjaxResponse(workerInfoSummaryOpt, id.tokens)
-    }
-  }
-
-  lazy val sampleValPrompt = QASRLValidationPrompt[SID](
-    allPrompts.head, "", "", "",
-    List(VerbQA(0, "Who did someone look at?", List(Span(4, 4))),
-         VerbQA(1, "Who looked at someone?", List(Span(0, 1))),
-         VerbQA(1, "How did someone look at someone?", List(Span(5, 5)))))
-
-  lazy val valTaskSpec = TaskSpecification.NoWebsockets[QASRLValidationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]](
-    settings.validationTaskKey, valHITType, valAjaxService, Vector(sampleValPrompt),
-    taskPageHeadElements = taskPageHeadLinks,
-    taskPageBodyElements = taskPageBodyLinks,
-    frozenHITTypeId = frozenValidationHITTypeId)
-
   // hit management --- circularly defined so they can communicate
 
   import config.actorSystem
@@ -325,50 +289,26 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
   lazy val accuracyTracker: ActorRef = actorSystem.actorOf(
     Props {
-      accuracyTrackerPeek = new QASRLGenerationAccuracyManager[SID](genAccDisqualType.getQualificationTypeId)
+      accuracyTrackerPeek = new QASRLGenerationAccuracyManager[SID]("")
       accuracyTrackerPeek
     }
   )
 
-  var valManagerPeek: QASRLValidationHITManager[SID] = null
-
-  lazy val valHelper = new HITManager.Helper(valTaskSpec)
-  lazy val valManager: ActorRef = actorSystem.actorOf(
-    Props {
-      valManagerPeek = new QASRLValidationHITManager(
-        valHelper,
-        valAgrDisqualType.getQualificationTypeId,
-        valAssignmentLimitType.getQualificationTypeId,
-        assignLimit,
-        accuracyTracker,
-        // sentenceTracker,
-        if(config.isProduction) _ => numValidationAssignmentsForPrompt else _ => 1,
-        if(config.isProduction) numActivePrompts else 3)
-      valManagerPeek
-    })
-
-  lazy val valActor = actorSystem.actorOf(Props(new TaskManager(valHelper, valManager)))
-
   val genTaskSpec = TaskSpecification.NoWebsockets[QASRLGenerationPrompt[SID], List[VerbQA], QASRLGenerationAjaxRequest[SID]](
-    settings.generationTaskKey, genHITType, genAjaxService, allPrompts,
+    settings.generationSimpleTaskKey, genHITType, genAjaxService, allPrompts,
     taskPageHeadElements = taskPageHeadLinks,
     taskPageBodyElements = taskPageBodyLinks,
     frozenHITTypeId = frozenGenerationHITTypeId)
 
-  var genManagerPeek: QASRLGenerationHITManager[SID] = null
+  var genManagerPeek: QASRLGenerationSimplifiedHITManager[SID] = null
 
   val genHelper = new HITManager.Helper(genTaskSpec)
   val genManager: ActorRef = actorSystem.actorOf(
     Props {
-      genManagerPeek = new QASRLGenerationHITManager(
+      genManagerPeek = new QASRLGenerationSimplifiedHITManager(
         genHelper,
-        valHelper,
-        valManager,
         genCoverageDisqualType.getQualificationTypeId,
-        genAssignmentLimitType.getQualificationTypeId,
-        valTempDisqualifyType.getQualificationTypeId,
         assignLimit,
-        // sentenceTracker,
         if(config.isProduction) _ => numGenerationAssignmentsForPrompt else _ => 1,
         if(config.isProduction) numActivePrompts else 3,
         allPrompts.iterator)
@@ -377,13 +317,13 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   )
   val genActor = actorSystem.actorOf(Props(new TaskManager(genHelper, genManager)))
 
-  lazy val server = new Server(List(genTaskSpec, valTaskSpec))
+  lazy val server = new Server(List(genTaskSpec))
 
   // used to schedule data-saves
   private[this] var schedule: List[Cancellable] = Nil
   def startSaves(interval: FiniteDuration = 5 minutes): Unit = {
     if(schedule.exists(_.isCancelled) || schedule.isEmpty) {
-      schedule = List(genManager, valManager, accuracyTracker).map(actor =>
+      schedule = List(genManager).map(actor =>
         config.actorSystem.scheduler.schedule(
           2 seconds, interval, actor, SaveData)(
           config.actorSystem.dispatcher, actor)
@@ -395,50 +335,31 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   def setGenHITsActiveEach(n: Int) = {
     genManager ! SetNumHITsActive(n)
   }
-  def setValHITsActive(n: Int) = {
-    valManager ! SetNumHITsActive(n)
-  }
+
 
   import TaskManager.Message._
   def start(interval: FiniteDuration = 30 seconds) = {
     server
     startSaves()
     genActor ! Start(interval, delay = 0 seconds)
-    valActor ! Start(interval, delay = 3 seconds)
   }
   def stop() = {
     genActor ! Stop
-    valActor ! Stop
-    revokeAllWorkerQuals(valTempDisqualifyType.getQualificationTypeId,
-      "Restored your ability to validate answers. " +
-      "Thank you for participating.")
-
-    revokeAllWorkerQuals(valAssignmentLimitType.getQualificationTypeId,
-      "Restored your ability to work on future batches of answering questions.")
-
-    revokeAllWorkerQuals(genAssignmentLimitType.getQualificationTypeId,
-      "Restored your ability to work on future batches of writing questions.")
-
     stopSaves
   }
   def delete() = {
     genActor ! Delete
-    valActor ! Delete
   }
   def expire() = {
     genActor ! Expire
-    valActor ! Expire
   }
   def update() = {
     server
     genActor ! Update
-    valActor ! Update
   }
   def save() = {
-    // sentenceTracker ! SaveData
     accuracyTracker ! SaveData
     genManager ! SaveData
-    valManager ! SaveData
   }
 
   // for use while it's running. Ideally instead of having to futz around at the console calling these functions,
@@ -446,40 +367,12 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
   def allGenInfos = hitDataService.getAllHITInfo[QASRLGenerationPrompt[SID], List[VerbQA]](genTaskSpec.hitTypeId).get
 
-  def allValInfos = hitDataService.getAllHITInfo[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]](valTaskSpec.hitTypeId).get
-
   def currentGenSentences: List[(SID, String)] = {
     genHelper.activeHITInfosByPromptIterator.map(_._1.id).map(id =>
       id -> Text.render(id.tokens)
     ).toList
   }
 
-  def latestValInfos(n: Int = 5) = allValInfos
-    .filter(_.assignments.nonEmpty)
-    .sortBy(_.assignments.map(_.submitTime).max)
-    .takeRight(n)
-
-  // sorted increasing by submit time
-  def infosForGenWorker(workerId: String) = {
-    val scored = for {
-      hi <- allValInfos
-      sourceAssignment <- hitDataService.getAssignmentsForHIT[List[VerbQA]](genTaskSpec.hitTypeId, hi.hit.prompt.sourceHITId).toOptionLogging(logger).toList.flatten
-      if sourceAssignment.assignmentId == hi.hit.prompt.sourceAssignmentId
-      if sourceAssignment.workerId == workerId
-    } yield (hi, sourceAssignment.submitTime)
-    scored.sortBy(_._2).map(_._1)
-  }
-
-  // sorted increasing by submit time
-  def infosForValWorker(workerId: String) = {
-    val scored = for {
-      hi <- allValInfos
-      if hi.assignments.exists(_.workerId == workerId)
-      workerAssignment = hi.assignments.find(_.workerId == workerId).get
-      nonWorkerAssignments = hi.assignments.filter(_.workerId != workerId)
-    } yield (HITInfo(hi.hit, workerAssignment :: nonWorkerAssignments), workerAssignment.submitTime)
-    scored.sortBy(_._2).map(_._1)
-  }
 
   def renderValidation(info: HITInfo[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]]) = {
     val sentence = info.hit.prompt.genPrompt.id.tokens
@@ -499,45 +392,6 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
           f"$genWorkerString%-20s $question%-35s --> $answerString%20s | $allValidationsString"
       }.mkString("\n") + "\n"
   }
-
-  // print LATEST and WORST n entries for val or gen worker, n default Int.MaxValue
-
-  def printLatestGenInfos(workerId: String, n: Int = 5) =
-    infosForGenWorker(workerId)
-      .takeRight(n)
-      .map(renderValidation)
-      .foreach(println)
-
-  def printWorstGenInfos(workerId: String, n: Int = 5) =
-    infosForGenWorker(workerId)
-      .sortBy(_.assignments.flatMap(_.response).filter(_.isInvalid).size)
-      .takeRight(n)
-      .map(renderValidation)
-      .foreach(println)
-
-  def printLatestValInfos(workerId: String, n: Int = 5) =
-    infosForValWorker(workerId)
-      .takeRight(n)
-      .map(renderValidation)
-      .foreach(println)
-
-  def printWorstValInfos(workerId: String, n: Int = 5) =
-    infosForValWorker(workerId)
-      .sortBy { hi =>
-      if(hi.assignments.size <= 1) Int.MinValue else {
-        val totalQAPairs = hi.hit.prompt.qaPairs.size.toDouble
-        val agreedQAPairs = hi.assignments.head.response
-          .zip(hi.assignments.tail.map(a => a.response.map(a.workerId -> _)).transpose)
-          .map { case (givenAnswer, refPairs) =>
-            QASRLValidationResponseComparison(
-              givenAnswer,
-              refPairs.filter(p => !valManagerPeek.blockedValidators.contains(p._1))
-            ) }
-          .filter(_.isAgreement).size
-        totalQAPairs - agreedQAPairs } }
-      .takeRight(n)
-      .map(renderValidation)
-      .foreach(println)
 
   case class StatSummary(
     workerId: String,
@@ -587,14 +441,6 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
     }
   }
 
-  def allStatSummaries = {
-    val allStats = accuracyTrackerPeek.allWorkerStats
-    val allInfos = valManagerPeek.allWorkerInfo
-    (allStats.keys ++ allInfos.keys).toSet.toList.flatMap((wid: String) =>
-      StatSummary.makeFromStatsAndInfo(allStats.get(wid), allInfos.get(wid))
-    )
-  }
-
   def printStatsHeading =
     println(f"${"Worker ID"}%14s  ${"Verbs"}%5s  ${"Qs"}%5s  ${"Acc"}%4s  ${"As"}%5s  ${"%Bad"}%5s  ${"Agr"}%4s  $$")
 
@@ -609,24 +455,6 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
       println(f"$wid%14s  $numVerbs%5s  $numQs%5s  $acc%4s  $numAs%5s  $pctBad%5s  $agr%4s  $earnings%.2f")
   }
 
-  def statsForWorker(workerId: String): Option[StatSummary] = allStatSummaries.find(_.workerId == workerId)
-
-  def printStatsForWorker(workerId: String) = statsForWorker(workerId) match {
-    case None => println("No stats for worker.")
-    case Some(ss) =>
-      printStatsHeading
-      printSingleStatSummary(ss)
-  }
-
-  def printStats[B : Ordering](sortFn: StatSummary => B) = {
-    val summaries = allStatSummaries.sortBy(sortFn)
-    printStatsHeading
-    summaries.foreach(printSingleStatSummary)
-  }
-
-  def printQStats = printStats(-_.numQs.getOrElse(0))
-  def printAStats = printStats(-_.numAs.getOrElse(0))
-
   def printCoverageStats = genManagerPeek.coverageStats.toList
     .sortBy(-_._2.size)
     .map { case (workerId, numQs) => f"$workerId%s\t${numQs.size}%d\t${numQs.sum.toDouble / numQs.size}%.2f" }
@@ -635,62 +463,10 @@ class QASRLAnnotationPipeline[SID : Reader : Writer : HasTokens](
   def printGenFeedback(n: Int) = genManagerPeek.feedbacks.take(n).foreach(a =>
     println(a.workerId + " " + a.feedback)
   )
-  def printValFeedback(n: Int) = valManagerPeek.feedbacks.take(n).foreach(a =>
-    println(a.workerId + " " + a.feedback)
-  )
 
   def printAllFeedbacks(n: Int = Int.MaxValue) = {
     println("Generation:")
     printGenFeedback(n)
-    println("\nValidation:")
-    printValFeedback(n)
   }
 
-  def aggregateStats = allStatSummaries.foldLeft(AggregateStatSummary.empty)(_ combine _)
-
-  def printAggregateStats = aggregateStats match {
-    case AggregateStatSummary(numVerbs, numQs, numAs, numInvalidAnswers, totalCost) =>
-      println(f"${"Num verbs:"}%-20s$numVerbs%d")
-      println(f"${"Num questions:"}%-20s$numQs%d")
-      println(f"${"Num answers:"}%-20s$numAs%d")
-      println(f"${"Num invalids:"}%-20s$numInvalidAnswers%d")
-      println(f"${"Total cost:"}%-20s$totalCost%.2f")
-  }
-
-  def savedHits(): Unit = {
-    val infos = for {
-      info <- allValInfos
-      hid = info.hit.hitId
-      sid = info.hit.prompt.genPrompt.id
-      vid = info.hit.prompt.genPrompt.verbIndex
-      questions = info.hit.prompt.qaPairs.map(_.question)
-      ass <- info.assignments
-      wid = ass.workerId
-      aid = ass.assignmentId
-      (question, valAnswer) <- questions.zip(ass.response)
-      theAnswer = QASRLValidationAnswer.render(sid.tokens, valAnswer)
-
-    } yield f"${sid}\t$vid\t$question\t$theAnswer\t$wid\t$aid\t$hid"
-    println("sent_id\tverb_idx\tquestion\tanswer\tworker_id\tassign_id\thit_id")
-    infos.foreach(println)
-  }
-
-  def printProgress(): Unit = {
-    val totalGenPrompts = allPrompts.length * numGenerationAssignmentsForPrompt
-    val totalValPrompts = totalGenPrompts * numValidationAssignmentsForPrompt
-
-    val completedGenerationsCount = allGenInfos.map(_.assignments.length).sum
-    val completedValidationsCount = allValInfos.map(_.assignments.length).sum
-
-    val uploadedGenerationsCount = allGenInfos.length
-    val uploadedValidationsCount = allValInfos.length
-
-    println(s"Generation HitTypeId: ${genTaskSpec.hitTypeId}")
-    println(s"Validation HitTypeId: ${valTaskSpec.hitTypeId}")
-
-    println(f"Generation completed / total: $completedGenerationsCount / $totalGenPrompts ")
-    println(f"Validation completed / total: $completedValidationsCount / $totalValPrompts ")
-
-    println(f"Uploaded to MTurk: (Generation / Validation): $uploadedGenerationsCount / $uploadedValidationsCount ")
-  }
 }

@@ -220,9 +220,10 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
         <.span(Styles.bolded, "Who blamed someone? --> Protesters"), """ becomes """,
         <.span(Styles.goodGreen, "Protesters blamed someone, "), """ which is valid, while """,
         <.span(Styles.bolded, "Who blamed? --> Protesters"), """ would become """,
-        <.span(Styles.badRed, "Protesters blamed, "), s""" which is ungrammatical, so it is invalid.
-           Your questions will be judged by other annotators, and you must retain an accuracy of
-           ${(100.0 * generationAccuracyBlockingThreshold).toInt}% in order to remain qualified. """),
+        <.span(Styles.badRed, "Protesters blamed, "), s""" which is ungrammatical, so it is invalid. """),
+      // We no longer track generation accuracy online via validators
+//           Your questions will be judged by other annotators, and you must retain an accuracy of
+//           ${(100.0 * generationAccuracyBlockingThreshold).toInt}% in order to remain qualified. """),
       <.li(
         <.span(Styles.bolded, "Verb-relevance. "),
         s"""The answer to a question must pertain to the participants, time, place, reason, etc., of """,
@@ -322,17 +323,23 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
           you will need to write more than ${generationCoverageQuestionsPerVerbThreshold} questions on average in order to stay qualified.
           On average, it should take less than 30 seconds per question-answer pair, and be much quicker with practice.
           """),
-    <.p("""Your questions will be evaluated by other annotators, and """,
-        <.b(""" you will only be awarded bonuses for your valid question-answer pairs. """),
-        s""" (However, your questions-per-verb average will include invalid questions.)
-          The bonus will be awarded as soon as validators have checked all of your question-answer pairs,
-          which will happen shortly after you submit (but will vary depending on worker availability).
-          Your accuracy will be updated as your questions are validated
-          and shown to you just below the task interface.
-          (Note that the validators will sometimes make mistakes,
-          so there is an element of randomness to it: don't read too deeply into small changes in your accuracy.)
-          If this number drops below ${(100 * generationAccuracyBlockingThreshold).toInt},
-          you will be disqualified from this task. """)
+      <.p(
+        """Your questions will be sampled and evaluated by expert annotators. From time to time you will receive
+          |feedback for your assignments, you are expected to read it carefully and act accordingly. """.stripMargin)
+
+
+
+//    <.p("""Your questions will be evaluated by other annotators, and """,
+//        <.b(""" you will only be awarded bonuses for your valid question-answer pairs. """),
+//        s""" (However, your questions-per-verb average will include invalid questions.)
+//          The bonus will be awarded as soon as validators have checked all of your question-answer pairs,
+//          which will happen shortly after you submit (but will vary depending on worker availability).
+//          Your accuracy will be updated as your questions are validated
+//          and shown to you just below the task interface.
+//          (Note that the validators will sometimes make mistakes,
+//          so there is an element of randomness to it: don't read too deeply into small changes in your accuracy.)
+//          If this number drops below ${(100 * generationAccuracyBlockingThreshold).toInt},
+//          you will be disqualified from this task. """)
   )
 
   override val generationInstructions = <.div(
@@ -344,8 +351,8 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
           "Overview" -> generationOverview,
           "Interface & Controls" -> generationControls,
           "Question Format" -> generationQuestionFormat,
-          "Conditions & Bonuses" -> generationConditions,
-          "Examples" -> <.div(examples)
+          "Conditions & Bonuses" -> generationConditions
+//          "Examples" -> <.div(examples)
         )
       )
     )

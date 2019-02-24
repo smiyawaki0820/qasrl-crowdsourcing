@@ -7,7 +7,7 @@ import com.typesafe.scalalogging.StrictLogging
 import nlpdata.datasets.wiktionary
 import nlpdata.util.HasTokens
 import nlpdata.util.HasTokens.ops._
-import qasrl.crowd.{_}
+import qasrl.crowd._
 import qasrl.labeling._
 import spacro._
 import spacro.tasks._
@@ -19,8 +19,8 @@ import scala.util.Try
 
 class AnnotationSetup(datasetPath: Path, liveDataPath: Path,
                       numGenerationsPerPrompt: Int,
-                      numValidationsPerPrompt: Int,
-                      numActivePrompts: Int)(
+                      numActivePrompts: Int,
+                      phase: Phase)(
   implicit config: TaskConfig) extends StrictLogging{
 
   val resourcePath: Path = java.nio.file.Paths.get("datasets")
@@ -77,11 +77,11 @@ class AnnotationSetup(datasetPath: Path, liveDataPath: Path,
   }
 
 
-  lazy val experiment = new QASRLAnnotationPipeline(
+  lazy val experiment = new QASRLSimplifiedAnnotationPipeline(
     allIds,
     numGenerationsPerPrompt,
-    numValidationsPerPrompt,
     numActivePrompts,
+    phase,
     liveAnnotationDataService)
 
   val qasrlColumns = List(

@@ -16,11 +16,13 @@ abstract class QASRLDispatcher[SID : Reader : Writer](implicit settings: QASRLSe
   def validationInstructions: VdomTag
 
   lazy val genClient = new QASRLGenerationClient[SID](generationInstructions)
+  lazy val genSimpleClient = new QASRLGenerationSimplifiedClient[SID](generationInstructions)
 
   lazy val valClient = new QASRLValidationClient[SID](validationInstructions)
 
   final override lazy val taskMapping = Map[String, () => Unit](
     settings.generationTaskKey -> genClient.main,
+    settings.generationSimpleTaskKey -> genSimpleClient.main,
     settings.validationTaskKey -> valClient.main)
 
 }

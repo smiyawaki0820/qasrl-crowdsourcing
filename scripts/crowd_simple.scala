@@ -15,6 +15,7 @@ import nlpdata.util.Text
 import nlpdata.util.HasTokens.ops._
 
 
+
 val isProduction = false // sandbox. change to true for production
 val domain = "localhost" // change to your domain, or keep localhost for testing
 val projectName = "qasrl-crowd-example" // make sure it matches the SBT project;
@@ -28,6 +29,10 @@ val annotationPath = Paths.get(s"data/annotations/wikinews")
 val liveDataPath = Paths.get(s"data/live/wikinews")
 val qasrlPath = Paths.get(s"data/wikinews.dev.data.csv")
 
+val phase = Trap
+//val phase = Training
+//val phase = Production
+
 implicit val timeout = akka.util.Timeout(5.seconds)
 implicit val config: TaskConfig = {
   if(isProduction) {
@@ -40,14 +45,12 @@ implicit val config: TaskConfig = {
 }
 
 val numGenerationsPerPrompt = 1
-val numValidationsPerPrompt = 2
 val numActivePrompts = 50
 
 val setup = new AnnotationSetup(qasrlPath,
-  liveDataPath,
-  numGenerationsPerPrompt,
-  numValidationsPerPrompt,
-  numActivePrompts)
+  liveDataPath, numGenerationsPerPrompt,
+  numActivePrompts,
+  phase)
 
 import setup.SentenceIdHasTokens
 
@@ -67,7 +70,6 @@ def exit = {
 // use with caution... intended mainly for sandbox
 def deleteAll = {
   exp.setGenHITsActiveEach(0)
-  exp.setValHITsActive(0)
   Thread.sleep(200)
   exp.expire
   exp.delete
