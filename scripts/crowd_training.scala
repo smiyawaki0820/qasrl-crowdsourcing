@@ -29,9 +29,9 @@ val httpsPort = 8080
 val phase = Training
 //val phase = Production
 val phaseName = phase.toString.toLowerCase
-val annotationPath = Paths.get(s"data/annotations/wikinews.{$phaseName}")
-val liveDataPath = Paths.get(s"data/live.{$phaseName}")
-val qasrlPath = Paths.get(s"data/wikinews.dev.{$phaseName}.csv")
+val annotationPath = Paths.get(s"data/annotations/wikinews.$phaseName")
+val liveDataPath = Paths.get(s"data/live.$phaseName")
+val qasrlPath = Paths.get(s"data/wikinews.dev.$phaseName.csv")
 
 
 

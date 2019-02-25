@@ -30,9 +30,9 @@ val phase = Trap
 //val phase = Production
 
 val phaseName = phase.toString.toLowerCase
-val annotationPath = Paths.get(s"data/annotations/wikinews.{$phaseName}")
-val liveDataPath = Paths.get(s"data/live.{$phaseName}")
-val qasrlPath = Paths.get(s"data/wikinews.dev.{$phaseName}.csv")
+val annotationPath = Paths.get(s"data/annotations/wikinews.$phaseName")
+val liveDataPath = Paths.get(s"data/live.$phaseName")
+val qasrlPath = Paths.get(s"data/wikinews.dev.$phaseName.csv")
 
 
 implicit val timeout = akka.util.Timeout(5.seconds)
