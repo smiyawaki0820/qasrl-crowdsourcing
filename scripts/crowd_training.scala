@@ -13,8 +13,7 @@ import com.amazonaws.services.mturk.model._
 import com.github.tototoshi.csv.CSVReader
 import nlpdata.util.Text
 import nlpdata.util.HasTokens.ops._
-
-
+import scala.collection.JavaConverters._
 
 val isProduction = false // sandbox. change to true for production
 val domain = "localhost" // change to your domain, or keep localhost for testing
@@ -25,13 +24,16 @@ val interface = "0.0.0.0"
 val httpPort = 8888
 val httpsPort = 8080
 
-val annotationPath = Paths.get(s"data/annotations/wikinews")
-val liveDataPath = Paths.get(s"data/live/wikinews")
-val qasrlPath = Paths.get(s"data/wikinews.dev.data.csv")
-
-val phase = Trap
-//val phase = Training
+// Uncomment the phase you want to activate
+//val phase = Trap
+val phase = Training
 //val phase = Production
+val phaseName = phase.toString.toLowerCase
+val annotationPath = Paths.get(s"data/annotations/wikinews.{$phaseName}")
+val liveDataPath = Paths.get(s"data/live.{$phaseName}")
+val qasrlPath = Paths.get(s"data/wikinews.dev.{$phaseName}.csv")
+
+
 
 implicit val timeout = akka.util.Timeout(5.seconds)
 implicit val config: TaskConfig = {
@@ -75,53 +77,6 @@ def deleteAll = {
   exp.delete
 }
 
-def yesterday = {
-  val cal = java.util.Calendar.getInstance
-  cal.add(java.util.Calendar.DATE, -1)
-  cal.getTime
-}
-
-import scala.collection.JavaConverters._
-
-def expireHITById(hitId: String) = {
-  config.service.updateExpirationForHIT(
-    (new UpdateExpirationForHITRequest)
-      .withHITId(hitId)
-      .withExpireAt(yesterday))
-}
-
-def approveAllAssignmentsByHITId(hitId: String) = for {
-  mTurkAssignment <- config.service.listAssignmentsForHIT(
-    new ListAssignmentsForHITRequest()
-      .withHITId(hitId)
-      .withAssignmentStatuses(AssignmentStatus.Submitted)
-    ).getAssignments.asScala.toList
-} yield config.service.approveAssignment(
-  new ApproveAssignmentRequest()
-    .withAssignmentId(mTurkAssignment.getAssignmentId)
-    .withRequesterFeedback(""))
-
-def deleteHITById(hitId: String) =
-  config.service.deleteHIT((new DeleteHITRequest).withHITId(hitId))
-
-def disableHITById(hitId: String) = {
-  expireHITById(hitId)
-  deleteHITById(hitId)
-}
-
-def getActiveHits = {
-  config.service.listAllHITs
-}
-
-def getActiveHITIds = {
-  getActiveHits.map(_.getHITId)
-}
-
-def flushAll(): Unit = {
-  for(hitId <- getActiveHITIds) {
-    disableHITById(hitId)
-  }
-}
 
 def saveGenerationData(filename: String) = {
   val nonEmptyGens = exp.allGenInfos.filter(_.assignments.nonEmpty)

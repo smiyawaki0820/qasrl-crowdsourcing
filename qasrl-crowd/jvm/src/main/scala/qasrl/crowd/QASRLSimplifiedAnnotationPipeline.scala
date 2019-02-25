@@ -469,4 +469,20 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
     printGenFeedback(n)
   }
 
+  def info(): Unit = {
+    val totalGenPrompts = allPrompts.length * numGenerationAssignmentsForPrompt
+
+    val completedGenerationsCount = allGenInfos.map(_.assignments.length).sum
+
+    val uploadedGenerationsCount = allGenInfos.length
+
+    println(s"Generation HitTypeId: ${genTaskSpec.hitTypeId}")
+    println(s"Active Phase: $phase")
+    println()
+    println(s"Training qualification id: ${genTrainingQualType.getQualificationTypeId}")
+    println(s"Production qualification id: ${genProductionQualType.getQualificationTypeId}")
+    println()
+    println(f"Generation assignments: $completedGenerationsCount/$totalGenPrompts (completed / total)")
+    println(f"Uploaded generation hits to MTurk: $uploadedGenerationsCount")
+  }
 }
