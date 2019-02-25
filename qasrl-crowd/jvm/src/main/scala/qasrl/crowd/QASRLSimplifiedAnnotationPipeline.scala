@@ -134,6 +134,14 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
   }
   val genCoverageRequirement = createQualificationReq(genCoverageDisqualType, false)
 
+  val genAccDisqualTypeName = "Question-answer writing accuracy disqualification"
+  val genAccDisqualType = findQualificationType(genAccDisqualTypeName).getOrElse {
+    logger.info("Generating generation accuracy disqualification type...")
+    createQualification(genAccDisqualTypeName, "Accuracy on the question-answer writing task is too low.")
+  }
+
+  val genAccuracyRequirement = createQualificationReq(genAccDisqualType, shouldHave = false)
+
   val genTrainingQualName = "Training and Qualification Phase for annotators in question generation"
   val genProductionQualName = "Production Phase for annotators in question generation"
 
@@ -176,6 +184,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
   // NOTE may need to call multiple times to cover all workers... sigh TODO pagination
   def resetAllQualificationValues = {
     revokeAllWorkerQuals(genCoverageDisqualType.getQualificationTypeId)
+    revokeAllWorkerQuals(genAccDisqualType.getQualificationTypeId)
     revokeAllWorkerQuals(genTrainingQualType.getQualificationTypeId)
     revokeAllWorkerQuals(genProductionQualType.getQualificationTypeId)
   }
@@ -212,7 +221,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
   private def selectHitType(phase: Phase) = {
     val titleSuffix = phase match {
-      case Training => "[Qualification] "
+      case Training => "[Qualification]"
       case Production => "[Production]"
       case default => ""
     }
@@ -248,7 +257,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
       reward = settings.generationReward,
       keywords = "language,english,question answering",
       qualRequirements = Array[QualificationRequirement](
-        approvalRateRequirement, localeRequirement, genCoverageRequirement)
+        approvalRateRequirement, localeRequirement, genCoverageRequirement, genAccuracyRequirement)
         ++ phaseRequirements,
       autoApprovalDelay = 2592000L, // 30 days
       assignmentDuration = 600L)
