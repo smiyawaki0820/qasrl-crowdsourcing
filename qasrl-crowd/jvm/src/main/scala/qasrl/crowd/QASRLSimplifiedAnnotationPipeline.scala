@@ -21,11 +21,6 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Random
 
-sealed trait Phase { }
-case object Trap extends Phase{ }
-case object Training extends Phase { }
-case object Production extends Phase { }
-
 
 class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
   val allIds: Vector[SID], // IDs of sentences to annotate
@@ -252,7 +247,8 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
       write questions and answers about that verb.
       Questions must adhere to a certain template,
       provided by autocomplete functionality.
-      Maintain high accuracy to stay qualified.
+      Workers who maintain high accuracy will be contacted
+      for further large-scale annotation efforts.
     """.trim.replace("\\s+", " "),
       reward = settings.generationReward,
       keywords = "language,english,question answering",
@@ -303,8 +299,14 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
     }
   )
 
+  val genTaskKey = phase match {
+    case Trap => settings.generationTrapTaskKey
+    case Training => settings.generationTrainTaskKey
+    case Production => settings.generationProdTaskKey
+  }
+
   val genTaskSpec = TaskSpecification.NoWebsockets[QASRLGenerationPrompt[SID], List[VerbQA], QASRLGenerationAjaxRequest[SID]](
-    settings.generationSimpleTaskKey, genHITType, genAjaxService, allPrompts,
+    genTaskKey, genHITType, genAjaxService, allPrompts,
     taskPageHeadElements = taskPageHeadLinks,
     taskPageBodyElements = taskPageBodyLinks,
     frozenHITTypeId = frozenGenerationHITTypeId)
@@ -490,6 +492,8 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
     println()
     println(s"Training qualification id: ${genTrainingQualType.getQualificationTypeId}")
     println(s"Production qualification id: ${genProductionQualType.getQualificationTypeId}")
+    println(s"Training coverage id: ${genCoverageDisqualType.getQualificationTypeId}")
+    println(s"Production accuracy id: ${genAccDisqualType.getQualificationTypeId}")
     println()
     println(f"Generation assignments: $completedGenerationsCount/$totalGenPrompts (completed / total)")
     println(f"Uploaded generation hits to MTurk: $uploadedGenerationsCount")

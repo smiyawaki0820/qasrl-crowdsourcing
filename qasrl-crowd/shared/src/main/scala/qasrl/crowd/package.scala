@@ -6,6 +6,11 @@ import nlpdata.datasets.wiktionary.InflectedForms
 
 package object crowd {
 
+  sealed trait Phase { }
+  case object Trap extends Phase{ }
+  case object Training extends Phase { }
+  case object Production extends Phase { }
+
   case class QASRLGenerationPrompt[SID](
     id: SID,
     verbIndex: Int)

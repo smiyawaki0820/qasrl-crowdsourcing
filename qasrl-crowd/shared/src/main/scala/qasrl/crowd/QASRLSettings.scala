@@ -6,7 +6,9 @@ trait QASRLSettings {
   // used as URL parameters that indicate to the client which interface to use
 
   val generationTaskKey = "generation"
-  val generationSimpleTaskKey = "generation_simple"
+  val generationTrapTaskKey = "generation.prep"
+  val generationTrainTaskKey = "generation.training"
+  val generationProdTaskKey = "generation.production"
   val validationTaskKey = "validation"
   val dashboardTaskKey = "dashboard"
 

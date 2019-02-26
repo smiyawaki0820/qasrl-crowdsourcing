@@ -1,18 +1,15 @@
 package example
 
 import spacro.ui._
-
-import qasrl.crowd.QASRLDispatcher
+import qasrl.crowd.{Phase, QASRLDispatcher, Trap}
 import qasrl.crowd.util._
-
 import japgolly.scalajs.react.vdom.html_<^._
 import japgolly.scalajs.react._
-
+import org.scalajs.dom.html.Div
 import scalacss.DevDefaults._
 import scalacss.ScalaCssReact._
 
 import scalajs.js.JSApp
-
 import upickle.default._
 
 object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
@@ -194,17 +191,19 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
 
   import InstructionsComponent._
 
-  val generationOverview = <.div(
-    <.p(Styles.badRed, """Read through all of the instructions and make sure you understand the interface controls before beginning. A full understanding of the requirements will help make sure validators approve your work and you can retain your qualification."""),
+  def trapAssignmentOverview: VdomTag =
+    <.div(
+    <.p(Styles.badRed,
+      """Read through all of the instructions and make sure you understand the interface controls before beginning.
+        |A full understanding of the requirements will help make sure validators approve your work and you can retain your qualification.""".stripMargin),
     <.p("""This task is for an academic research project by the natural language processing group at the University of Washington.
         We wish to deconstruct the meanings of verbs in English sentences into lists of questions and answers.
         You will be presented with a selection of English text with a verb written in bold."""),
     <.p("""You will write questions about the verb and highlight their answers in the original sentence. """,
-        <.b(""" Note: it takes exactly 2 clicks to highlight each answer; see the Interface & Controls tab for details. """),
-    """ Questions are required to follow a strict format, which is enforced by autocomplete functionality in the interface. """,
-        """ For example, the prompt below should elicit the following questions and answers: """),
-    <.blockquote(
-      ^.classSet1("blockquote"),
+      <.b(""" Note: it takes exactly 2 clicks to highlight each answer; see the Interface & Controls tab for details. """),
+      """ Questions are required to follow a strict format, which is enforced by autocomplete functionality in the interface. """,
+      """ For example, the prompt below should elicit the following questions and answers: """),
+    <.blockquote(^.classSet1("blockquote"),
       "Protesters ", <.span(Styles.bolded, " blamed "), " the corruption scandal on local officials, who today refused to promise that they would resume the investigation before year's end. "),
     <.ul(
       <.li("Who blamed someone? --> Protesters"),
@@ -222,17 +221,17 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
         <.span(Styles.bolded, "Who blamed? --> Protesters"), """ would become """,
         <.span(Styles.badRed, "Protesters blamed, "), s""" which is ungrammatical, so it is invalid. """),
       // We no longer track generation accuracy online via validators
-//           Your questions will be judged by other annotators, and you must retain an accuracy of
-//           ${(100.0 * generationAccuracyBlockingThreshold).toInt}% in order to remain qualified. """),
+      //           Your questions will be judged by other annotators, and you must retain an accuracy of
+      //           ${(100.0 * generationAccuracyBlockingThreshold).toInt}% in order to remain qualified. """),
       <.li(
         <.span(Styles.bolded, "Verb-relevance. "),
         s"""The answer to a question must pertain to the participants, time, place, reason, etc., of """,
         <.span(Styles.bolded, " the target verb in the sentence. "),
         """ For example, if the sentence is """,
         <.span(Styles.bolded,
-               " He ",
-               <.span(Styles.niceBlue, Styles.underlined, "promised"),
-               " to come tomorrow, "),
+          " He ",
+          <.span(Styles.niceBlue, Styles.underlined, "promised"),
+          " to come tomorrow, "),
         """ you may """, <.span(Styles.bolded, " not "), " write ",
         <.span(Styles.badRed, " When did someone promise to do something? --> tomorrow, "),
         """ because tomorrow is """, <.i(" not "),
@@ -248,12 +247,37 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
       )
     ),
     <.p("Occasionally, you may get a bolded word that isn't a verb, or is hard or impossible to write questions about. ",
-        " In this case, please do your best to come up with one question, even if it is nonsensical. ",
-        " While it will count against your accuracy, this case is rare enough that it shouldn't matter. ",
-        " If the sentence has grammatical errors or is not a complete sentence, please write questions and answers ",
-        " that are appropriate to the sentence's meaning to the best of your ability. "),
-    <.p("If you are not sure about certain cases, please check the examples.")
+      " In this case, please do your best to come up with one question, even if it is nonsensical. ",
+      " While it will count against your accuracy, this case is rare enough that it shouldn't matter. ",
+      " If the sentence has grammatical errors or is not a complete sentence, please write questions and answers ",
+      " that are appropriate to the sentence's meaning to the best of your ability. "),
+    <.p(
+      """Your work will be sampled and validated by comparing to question and answer pairs of expert annotators.
+        | You will have to keep sufficient agreement levels in order to stay qualified.
+        | Our long-term goal is to create """, <.span(Styles.bolded, "a large-scale corpus"),
+      """, consisting of thousands of sentences, and annotated by a group of qualified workers.
+        |We will select and contact high performing workers for further qualification and annotation rounds.""".stripMargin)
   )
+
+  def trainAssignmentOverview: VdomTag =
+    <.div(
+    <.p(Styles.badRed,
+      """Read through all of the instructions and make sure you understand the interface controls before beginning.
+        |A full understanding of the requirements will help make sure validators approve your work and you can retain your qualification.""".stripMargin),
+    <.a.toNewWindow(href = "www.google.com"),
+    <.p(
+      """Your work will be sampled and validated by comparing to question and answer pairs of expert annotators.
+        | You will have to keep sufficient agreement levels in order to stay qualified.
+        | Our long-term goal is to create """, <.span(Styles.bolded, "a large-scale corpus"),
+      """, consisting of thousands of sentences, and annotated by a group of qualified workers.
+        |We will select and contact high performing workers for further qualification and annotation rounds.""".stripMargin)
+  )
+
+  def generationOverview(phase: Phase): VdomTag = phase match {
+    case Trap => trapAssignmentOverview
+    case default => trainAssignmentOverview
+  }
+
 
   val generationQuestionFormat = <.div(
     <.p(""" This section is just for reference to help you understand the format of the questions.
@@ -317,16 +341,15 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
 
   val generationConditions = <.div(
     <.p(s"""Each question-answer pair after the first will earn you a bonus:
-          ${dollarsToCents(generationReward)}c for the second question, ${dollarsToCents(generationReward) + 1}c for the third
-          then ${dollarsToCents(generationReward) + 2}c, etc.
-          While at least one is required to submit the HIT,
-          you will need to write more than ${generationCoverageQuestionsPerVerbThreshold} questions on average in order to stay qualified.
-          On average, it should take less than 30 seconds per question-answer pair, and be much quicker with practice.
-          """),
-      <.p(
-        """Your questions will be sampled and evaluated by expert annotators. From time to time you will receive
-          |feedback for your assignments, you are expected to read it carefully and act accordingly. """.stripMargin)
-
+          |${dollarsToCents(generationReward)}c for the second question, ${dollarsToCents(generationReward) + 1}c for the third
+          |then ${dollarsToCents(generationReward) + 2}c, etc. Some tasks will be submitted
+          |to a thorough inspection before dispatching the bonus amount.""".stripMargin),
+    <.p(s"""While at least one question-answer is required to submit the HIT,
+          |you will need to write more than ${generationCoverageQuestionsPerVerbThreshold} questions on average in order to stay qualified.
+          |On average, it should take less than 30 seconds per question-answer pair, and be much quicker with practice."""),
+    <.p(
+      s"""Your work will be sampled and evaluated by expert annotators. You must maintain sufficient agreement levels
+         |in order to stay qualified for the task. """.stripMargin)
 
 
 //    <.p("""Your questions will be evaluated by other annotators, and """,
@@ -342,13 +365,13 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
 //          you will be disqualified from this task. """)
   )
 
-  override val generationInstructions = <.div(
+  override def generationInstructions(phase: Phase) = <.div(
     Instructions(
       InstructionsProps(
         instructionsId = "instructions",
         collapseCookieId = "generationCollapseCookie",
         tabs = List(
-          "Overview" -> generationOverview,
+          "Overview" -> generationOverview(phase),
           "Interface & Controls" -> generationControls,
           "Question Format" -> generationQuestionFormat,
           "Conditions & Bonuses" -> generationConditions

@@ -7,7 +7,7 @@ import spacro.util._
 import spacro.tasks._
 import upickle.default.Reader
 import akka.actor.ActorRef
-import com.amazonaws.services.mturk.model.{AssociateQualificationWithWorkerRequest, DisassociateQualificationFromWorkerRequest, ListWorkersWithQualificationTypeRequest, SendBonusRequest}
+import com.amazonaws.services.mturk.model.{Assignment => _, HIT => _, _}
 import upickle.default._
 import com.typesafe.scalalogging.StrictLogging
 import qasrl.crowd.util.dollarsToCents
@@ -88,6 +88,7 @@ class QASRLGenerationSimplifiedHITManager[SID : Reader : Writer](
     logger.info("Generation data saved.")
   }
 
+  val QUESTION_THRESHOLD = 7
 
   override def reviewAssignment(hit: HIT[QASRLGenerationPrompt[SID]], assignment: Assignment[List[VerbQA]]): Unit = {
     evaluateAssignment(hit, startReviewing(assignment), Approval(""))
@@ -115,7 +116,7 @@ class QASRLGenerationSimplifiedHITManager[SID : Reader : Writer](
     val numQAsValid = numQAsProvided // real accuracy judgment is done offline
     val bonusAwarded = settings.generationBonus(numQAsValid)
     val bonusCents = dollarsToCents(bonusAwarded)
-    if(bonusAwarded > 0.0) {
+    if(bonusAwarded > 0.0 && numQAsProvided < QUESTION_THRESHOLD) {
       val bonusMessage = s"Generation\tBonus:\t$bonusAwarded\tHitType:\t${assignment.hitTypeId}\tHitId:\t${assignment.hitId}\t"
       val assignMessage = s"Worker:\t${assignment.workerId}\tassignment:\t${assignment.assignmentId}"
       logger.info(bonusMessage + assignMessage)
@@ -128,6 +129,16 @@ class QASRLGenerationSimplifiedHITManager[SID : Reader : Writer](
             .withReason(
               s"""$numQAsValid question-answer pairs were provided, granting a bonus of ${bonusCents}c. """))
       ).toOptionLogging(logger).ifEmpty(logger.error(s"Failed to grant bonus of $bonusCents to worker ${assignment.workerId}"))
+    }
+    else if (numQAsProvided >= QUESTION_THRESHOLD) {
+      service.notifyWorkers(new NotifyWorkersRequest()
+      .withWorkerIds(assignment.workerId)
+      .withSubject("Bonus pending further review")
+      .withMessageText(
+        s"""One of your tasks was selected for
+           |further inspection by an expert annotator,
+           |if your work is deemed to be valid we will
+           |dispatch a bonus for your questions and answer pairs""".stripMargin))
     }
   }
 

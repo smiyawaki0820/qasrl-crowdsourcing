@@ -24,6 +24,16 @@ val interface = "0.0.0.0"
 val httpPort = 8888
 val httpsPort = 8080
 
+// Ports and domains on te-srv4
+//val isProduction = false // sandbox. change to true for production
+//val domain = "u.cs.biu.ac.il/~stanovg/qasrl" // change to your domain, or keep localhost for testing
+//val projectName = "qasrl-crowd-example" // make sure it matches the SBT project;
+//// this is how the .js file is found to send to the server
+//
+//val interface = "0.0.0.0"
+//val httpPort = 5904
+//val httpsPort = 5904
+
 // Uncomment the phase you want to activate
 val phase = Trap
 //val phase = Training
