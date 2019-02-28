@@ -259,16 +259,22 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
         |We will select and contact high performing workers for further qualification and annotation rounds.""".stripMargin)
   )
 
+  val instructionSlides = "http://bit.ly/2H6vCkG"
+
   def trainAssignmentOverview: VdomTag =
     <.div(
     <.p(Styles.badRed,
       """Read through all of the instructions and make sure you understand the interface controls before beginning.
         |A full understanding of the requirements will help make sure validators approve your work and you can retain your qualification.""".stripMargin),
-    <.a.toNewWindow(href = "www.google.com"),
+
+    <.p("Please click here: ",
+      <.a(^.href := instructionSlides, ^.target.blank, ^.rel := "noopener",
+      <.span(Styles.bolded, " Guidelines for Annotators in Writing Questions and Answers"))),
+
     <.p(
       """Your work will be sampled and validated by comparing to question and answer pairs of expert annotators.
         | You will have to keep sufficient agreement levels in order to stay qualified.
-        | Our long-term goal is to create """, <.span(Styles.bolded, "a large-scale corpus"),
+        | Our long-term goal is to create """.stripMargin, <.span(Styles.bolded, "a large-scale corpus"),
       """, consisting of thousands of sentences, and annotated by a group of qualified workers.
         |We will select and contact high performing workers for further qualification and annotation rounds.""".stripMargin)
   )
@@ -340,17 +346,16 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
   )
 
   val generationConditions = <.div(
-    <.p(s"""Each question-answer pair after the first will earn you a bonus:
-          |${dollarsToCents(generationReward)}c for the second question, ${dollarsToCents(generationReward) + 1}c for the third
-          |then ${dollarsToCents(generationReward) + 2}c, etc. Some tasks will be submitted
-          |to a thorough inspection before dispatching the bonus amount.""".stripMargin),
-    <.p(s"""While at least one question-answer is required to submit the HIT,
-          |you will need to write more than ${generationCoverageQuestionsPerVerbThreshold} questions on average in order to stay qualified.
-          |On average, it should take less than 30 seconds per question-answer pair, and be much quicker with practice."""),
-    <.p(
-      s"""Your work will be sampled and evaluated by expert annotators. You must maintain sufficient agreement levels
-         |in order to stay qualified for the task. """.stripMargin)
-
+    s"""Each question-answer pair after the first will earn you a bonus:
+        ${dollarsToCents(generationReward)}c for the second question, ${dollarsToCents(generationReward) + 1}c for the third
+        then ${dollarsToCents(generationReward) + 2}c, etc. Some tasks will be submitted
+        to a thorough inspection before dispatching the bonus amount.""",
+    s"""While at least one question-answer is required to submit the HIT,
+       you will need to write more than ${generationCoverageQuestionsPerVerbThreshold} questions
+       on average in order to stay qualified. On average, it should take less than 30 seconds
+       per question-answer pair, and be much quicker with practice.""",
+      s"""Your work will be sampled and evaluated by expert annotators.
+          You must maintain sufficient agreement levels in order to stay qualified for the task. """
 
 //    <.p("""Your questions will be evaluated by other annotators, and """,
 //        <.b(""" you will only be awarded bonuses for your valid question-answer pairs. """),
