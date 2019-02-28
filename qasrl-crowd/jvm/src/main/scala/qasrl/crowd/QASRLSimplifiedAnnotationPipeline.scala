@@ -220,17 +220,38 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
       case Production => "[Production]"
       case default => ""
     }
-    val descriptionPrefix = phase match {
-      case Training => """[Training and qualification]
-        |Your work will be reviewed by expert annotators. Read carefully the supplied instructions and act according to
-        |the received feedback. Successful accomplishment of this training round is essential to
-        |access more hits in the annotation rounds""".stripMargin
-      case Production =>
-        s"""[Production phase]
-           |Your work will be sampled and reviewed by expert annotators. From time to time you will receive feedback
-           |concerning your work. You are expected to read and act accordingly.
-         """.stripMargin
-      case default => ""
+    def selectDescription(phase: Phase): String = phase match {
+      case Training => s"""[Qualification]
+
+        Given a sentence and a verb from that sentence,
+        write questions and answers about that verb.
+        Questions must adhere to a certain template,
+        provided by autocomplete functionality.
+
+        Your work will be reviewed by expert annotators.
+        Read carefully the supplied instructions and act according to
+        the received feedback. Successful accomplishment of the training round is essential to
+        access more hits in the full annotation rounds"""
+
+      case Production => """[Production phase]
+
+        Given a sentence and a verb from that sentence,
+        write questions and answers about that verb.
+        Questions must adhere to a certain template,
+        provided by autocomplete functionality.
+
+        Your work will be reviewed by expert annotators,
+        every once in a while you will receive their feedback.
+        Please read it carefully and act upon it.
+        You should maintain high-agreement with experts to remain qualified."""
+
+      case Trap => """Given a sentence and a verb from that sentence,
+          write questions and answers about that verb.
+          Questions must adhere to a certain template,
+          provided by autocomplete functionality.
+
+          Workers who maintain high accuracy will be contacted
+          for further large-scale annotation efforts."""
     }
 
     val phaseRequirements = phase match {
@@ -241,15 +262,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
     HITType(
       title = s"Write question-answer pairs about a verb ${titleSuffix}",
-      description =s"""${descriptionPrefix}
-
-      Given a sentence and a verb from that sentence,
-      write questions and answers about that verb.
-      Questions must adhere to a certain template,
-      provided by autocomplete functionality.
-      Workers who maintain high accuracy will be contacted
-      for further large-scale annotation efforts.
-    """.trim.replace("\\s+", " "),
+      description = selectDescription(phase).trim.replace("\\s+", " "),
       reward = settings.generationReward,
       keywords = "language,english,question answering",
       qualRequirements = Array[QualificationRequirement](
