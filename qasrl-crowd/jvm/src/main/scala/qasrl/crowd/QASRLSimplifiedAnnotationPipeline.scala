@@ -231,7 +231,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
         Your work will be reviewed by expert annotators.
         Read carefully the supplied instructions and act according to
         the received feedback. Successful accomplishment of the training round is essential to
-        access more hits in the full annotation rounds"""
+        access more hits in the full annotation rounds."""
 
       case Production => """[Production phase]
 

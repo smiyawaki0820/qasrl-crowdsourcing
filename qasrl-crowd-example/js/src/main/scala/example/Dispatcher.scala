@@ -355,7 +355,9 @@ object Dispatcher extends QASRLDispatcher[SentenceId] with JSApp {
        on average in order to stay qualified. On average, it should take less than 30 seconds
        per question-answer pair, and be much quicker with practice.""",
       s"""Your work will be sampled and evaluated by expert annotators.
-          You must maintain sufficient agreement levels in order to stay qualified for the task. """
+          You must maintain sufficient agreement levels in order to stay qualified for the task. """,
+    s"""Note: Upon succesfully completing training you will earn a bonus of 5\$$"""
+
 
 //    <.p("""Your questions will be evaluated by other annotators, and """,
 //        <.b(""" you will only be awarded bonuses for your valid question-answer pairs. """),
