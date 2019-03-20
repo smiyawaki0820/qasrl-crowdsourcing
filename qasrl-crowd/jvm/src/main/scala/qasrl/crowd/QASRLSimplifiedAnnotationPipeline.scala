@@ -221,7 +221,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
       case default => ""
     }
     def selectDescription(phase: Phase): String = phase match {
-      case Training => s"""[Qualification]
+      case Training => s"""[Training]
 
         Given a sentence and a verb from that sentence,
         write questions and answers about that verb.
