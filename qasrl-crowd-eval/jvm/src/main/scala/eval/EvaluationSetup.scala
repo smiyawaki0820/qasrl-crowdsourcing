@@ -131,7 +131,7 @@ class EvaluationSetup(qasrlPath: Path,
 
   val qasrlColumns = List(
     "qasrl_id", "verb_idx", "verb",
-    "worker_id", "assign_id",
+    "worker_id", "assign_id", "source_assign_id",
     "question", "is_redundant", "answer_range", "answer",
     "wh", "subj", "obj", "obj2", "aux", "prep", "verb_prefix",
     "is_passive", "is_negated")

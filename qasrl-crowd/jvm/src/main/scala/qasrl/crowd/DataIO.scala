@@ -23,8 +23,8 @@ import scala.reflect.macros.whitebox
 
 
 case class QASRL(sid: String, verbIdx: Int, verb: String,
-                 workerId: String, assignId: String,
-                 question: String, answerRanges: String, answers: String,
+                 workerId: String, assignId: String, sourceAssignId: Option[String],
+                 question: String, isRedundant: Boolean, answerRanges: String, answers: String,
                  wh: String, subj: String, obj: String, obj2: String,
                  aux: String, prep: String, verbPrefix: String,
                  isPassive: Boolean, isNegated: Boolean)
@@ -138,20 +138,20 @@ object DataIO extends LazyLogging {
       val answerRanges = verbQA.answers.map(getRangeAsText).mkString("~!~")
       val answers = verbQA.answers.map(getText(_, sTokens)).mkString("~!~")
       QASRL(idString, verbIndex, verb,
-        workerId, assignId, question, answerRanges, answers,
+        workerId, assignId, None, question, false, answerRanges, answers,
         slot.wh, subj, obj, obj2,
         aux, prep, verbPrefix,
         frame.isPassive, frame.isNegated)
     }
   }
 
-  private def idAndVerbArbitration[SID](r: HITInfo[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]]): (SID, Int) = {
+  private def idAndVerbArbitration[SID](r: HITInfo[QASRLArbitrationPrompt[SID], List[QASRLValidationAnswer]]): (SID, Int) = {
     (r.hit.prompt.genPrompt.id, r.hit.prompt.genPrompt.verbIndex)
   }
 
   def makeArbitrationQAPairTSV[SID: HasTokens](
                                                 writeId: SID => String, // serialize sentence ID for distribution in data file
-                                                valInfos: List[HITInfo[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]]])(
+                                                valInfos: List[HITInfo[QASRLArbitrationPrompt[SID], List[QASRLValidationAnswer]]])(
                                                 implicit inflections: Inflections): Iterable[QASRL] = {
     for {
       ((sid, verbIndex), hitInfos) <- valInfos.groupBy(idAndVerbArbitration)
@@ -164,9 +164,11 @@ object DataIO extends LazyLogging {
 
       workerId = valAssignment.workerId
       assignId = valAssignment.assignmentId
-      questions = valHit.prompt.qaPairs.map(_.question)
-      arbitratedAnswers = valAssignment.response
-      (question, answer) <- questions.zip(arbitratedAnswers)
+      idx <- valHit.prompt.qaPairs.indices
+
+      sourceAssignId = valHit.prompt.qaPairs(idx)._1
+      question = valHit.prompt.qaPairs(idx)._2.question
+      answer = valAssignment.response(idx)
       answerTexts = answer.getSpans.map(getText(_, sTokens)).mkString("~!~")
       answerRanges = answer.getSpans.map(getRangeAsText).mkString("~!~")
       // take the question string without the '?' character. Last token might be a preposition.
@@ -190,7 +192,8 @@ object DataIO extends LazyLogging {
       val obj2 = slot.obj2.getOrElse("".lowerCase)
       val isValid = answer.isAnswer
       QASRL(idString, verbIndex, verb,
-        workerId, assignId, question, answerRanges, answerTexts,
+        workerId, assignId, Some(sourceAssignId), question, answer.isRedundant,
+        answerRanges, answerTexts,
         slot.wh, subj, obj, obj2,
         aux, prep, verbPrefix,
         frame.isPassive, frame.isNegated)

@@ -105,34 +105,34 @@ class QASRLEvaluationHITManager[SID : Reader : Writer](
 
   import scala.collection.JavaConverters._
 
-  def assessQualification(workerId: String): Unit =
-    allWorkerInfo.get(workerId).foreach { worker =>
-      if(worker.isLikelySpamming) blockWorker(worker.workerId)
-      else Try {
-        val workerIsDisqualified = helper.config.service
-          .listAllWorkersWithQualificationType(valDisqualificationTypeId)
-          .contains(worker.workerId)
-
-        val workerShouldBeDisqualified = !worker.agreement.isNaN &&
-          worker.agreement < settings.validationAgreementBlockingThreshold &&
-          worker.numAssignmentsCompleted > settings.validationAgreementGracePeriod
-
-        if(workerIsDisqualified && !workerShouldBeDisqualified) {
-          helper.config.service.disassociateQualificationFromWorker(
-            new DisassociateQualificationFromWorkerRequest()
-              .withQualificationTypeId(valDisqualificationTypeId)
-              .withWorkerId(worker.workerId)
-              .withReason("Agreement went back high enough on the question answering task."))
-        } else if(!workerIsDisqualified && workerShouldBeDisqualified) {
-          helper.config.service.associateQualificationWithWorker(
-            new AssociateQualificationWithWorkerRequest()
-              .withQualificationTypeId(valDisqualificationTypeId)
-              .withWorkerId(worker.workerId)
-              .withIntegerValue(1)
-              .withSendNotification(true))
-        }
-      }
-    }
+  def assessQualification(workerId: String): Unit = {}
+//    allWorkerInfo.get(workerId).foreach { worker =>
+//      if(worker.isLikelySpamming) blockWorker(worker.workerId)
+//      else Try {
+//        val workerIsDisqualified = helper.config.service
+//          .listAllWorkersWithQualificationType(valDisqualificationTypeId)
+//          .contains(worker.workerId)
+//
+//        val workerShouldBeDisqualified = !worker.agreement.isNaN &&
+//          worker.agreement < settings.validationAgreementBlockingThreshold &&
+//          worker.numAssignmentsCompleted > settings.validationAgreementGracePeriod
+//
+//        if(workerIsDisqualified && !workerShouldBeDisqualified) {
+//          helper.config.service.disassociateQualificationFromWorker(
+//            new DisassociateQualificationFromWorkerRequest()
+//              .withQualificationTypeId(valDisqualificationTypeId)
+//              .withWorkerId(worker.workerId)
+//              .withReason("Agreement went back high enough on the question answering task."))
+//        } else if(!workerIsDisqualified && workerShouldBeDisqualified) {
+//          helper.config.service.associateQualificationWithWorker(
+//            new AssociateQualificationWithWorkerRequest()
+//              .withQualificationTypeId(valDisqualificationTypeId)
+//              .withWorkerId(worker.workerId)
+//              .withIntegerValue(1)
+//              .withSendNotification(true))
+//        }
+//      }
+//    }
 
   def blockWorker(workerId: String) = {
     if(!blockedValidators.contains(workerId)) {

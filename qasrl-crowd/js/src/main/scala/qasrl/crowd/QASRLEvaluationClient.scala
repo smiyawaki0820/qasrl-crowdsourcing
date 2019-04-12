@@ -289,55 +289,6 @@ class QASRLEvaluationClient[SID: Writer : Reader](
                           instructions,
                           ^.margin := "5px"
                         ),
-
-                        workerInfoSummaryOpt.whenDefined(summary =>
-                          <.div(
-                            ^.classSet1("card"),
-                            ^.margin := "5px",
-                            <.p( // TODO
-                              <.span(
-                                Styles.bolded,
-                                """Proportion of questions you marked invalid: """,
-                                <.span(
-                                  if (summary.proportionInvalid < settings.invalidProportionEstimateLowerBound ||
-                                    summary.proportionInvalid > settings.invalidProportionEstimateUpperBound) {
-                                    Styles.badRed
-                                  } else {
-                                    Styles.goodGreen
-                                  },
-                                  f"""${summary.proportionInvalid * 100.0}%.1f%%"""
-                                ),
-                                "."
-                              ),
-                              s""" This should generally be between
-                                   ${(settings.invalidProportionEstimateLowerBound * 100).toInt}% and
-                                   ${(settings.invalidProportionEstimateUpperBound * 100).toInt}%.""",
-                              (if (summary.proportionInvalid < 0.15) " Please be harsher on bad questions. "
-                              else "")
-                            ).when(!summary.proportionInvalid.isNaN),
-                            <.p(
-                              <.span(
-                                Styles.bolded,
-                                "Agreement score: ",
-                                <.span(
-                                  if (summary.agreement <= settings.validationAgreementBlockingThreshold) {
-                                    Styles.badRed
-                                  } else if (summary.agreement <= settings.validationAgreementBlockingThreshold + 0.025) {
-                                    TagMod(Styles.uncomfortableOrange, Styles.bolded)
-                                  } else {
-                                    Styles.goodGreen
-                                  },
-                                  f"""${summary.agreement * 100.0}%.1f%%"""
-                                ),
-                                "."
-                              ),
-                              f""" This must remain above ${settings.validationAgreementBlockingThreshold * 100.0}%.1f%%""",
-                              getRemainingInAgreementGracePeriodOpt(summary).fold(".")(remaining =>
-                                s" after the end of a grace period ($remaining HITs remaining)."
-                              )
-                            ).when(!summary.agreement.isNaN)
-                          )
-                        ),
                         <.div(
                           ^.classSet1("card"),
                           ^.margin := "5px",
