@@ -137,7 +137,7 @@ class EvaluationSetup(qasrlPath: Path,
     "is_passive", "is_negated")
 
   def saveArbitrationData(filename: String,
-                          valInfos: List[HITInfo[QASRLValidationPrompt[SentenceId], List[QASRLValidationAnswer]]]): Unit = {
+                          valInfos: List[HITInfo[QASRLArbitrationPrompt[SentenceId], List[QASRLValidationAnswer]]]): Unit = {
     val contents: List[QASRL] = DataIO.makeArbitrationQAPairTSV(SentenceId.toString, valInfos).toList
     val path = liveDataPath.resolve(filename).toString
     val csv = CSVWriter.open(path, encoding = "utf-8")
