@@ -97,6 +97,12 @@ def progress() = {
   println(f"Completed: $completedPrompts / $totalPrompts ")
 }
 
+def saveGenerationData(filename: String) = {
+  val nonEmptyValidations = exp.allInfos.filter(_.assignments.nonEmpty)
+  setup.saveArbitrationData(filename, nonEmptyValidations)
+}
+
+
 
 
 
