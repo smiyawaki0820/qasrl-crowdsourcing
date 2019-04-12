@@ -40,11 +40,11 @@ import scala.collection.JavaConverters._
 import com.typesafe.scalalogging.StrictLogging
 
 class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
-  val allPrompts: Vector[QASRLValidationPrompt[SID]], // IDs of sentences to annotate
-  val numValidationsForPrompt: QASRLValidationPrompt[SID] => Int,
+  val allPrompts: Vector[QASRLArbitrationPrompt[SID]], // IDs of sentences to annotate
+  val numValidationsForPrompt: QASRLArbitrationPrompt[SID] => Int,
   frozenEvaluationHITTypeId: Option[String] = None,
   validationAgreementDisqualTypeLabel: Option[String] = None,
-  alternativePromptReaderOpt: Option[Reader[QASRLValidationPrompt[SID]]] = None)(
+  alternativePromptReaderOpt: Option[Reader[QASRLArbitrationPrompt[SID]]] = None)(
   implicit val config: TaskConfig,
   val annotationDataService: AnnotationDataService,
   val settings: QASRLEvaluationSettings,
@@ -174,7 +174,7 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
   lazy val sampleValPrompt = allPrompts.head
 
   lazy val valTaskSpec = TaskSpecification.NoWebsockets[
-    QASRLValidationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]](
+    QASRLArbitrationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]](
     settings.evaluationTaskKey, valHITType, valAjaxService, Vector(sampleValPrompt),
     taskPageHeadElements = taskPageHeadLinks,
     taskPageBodyElements = taskPageBodyLinks,
@@ -247,9 +247,9 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
 
   def allInfos = alternativePromptReaderOpt match {
     case None =>
-      hitDataService.getAllHITInfo[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]](valTaskSpec.hitTypeId).get
+      hitDataService.getAllHITInfo[QASRLArbitrationPrompt[SID], List[QASRLValidationAnswer]](valTaskSpec.hitTypeId).get
     case Some(altReader) =>
-      hitDataService.getAllHITInfo[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]](
+      hitDataService.getAllHITInfo[QASRLArbitrationPrompt[SID], List[QASRLValidationAnswer]](
         valTaskSpec.hitTypeId
       )(altReader, implicitly[Reader[List[QASRLValidationAnswer]]]).get
   }
@@ -269,49 +269,6 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
     } yield (HITInfo(hi.hit, workerAssignment :: nonWorkerAssignments), workerAssignment.submitTime)
     scored.sortBy(_._2).map(_._1)
   }
-
-  def renderValidation(info: HITInfo[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]]) = {
-    val sentence = info.hit.prompt.id.tokens
-    Text.render(sentence) + "\n" +
-      info.hit.prompt.qaPairs.zip(info.assignments.map(_.response).transpose).map {
-        case (VerbQA(verbIndex, question, answers), validationAnswers) =>
-//          val genSourceString = answers.mkString(";").take(20)
-          val validationRenderings = validationAnswers.map(QASRLValidationAnswer.render(sentence, _))
-          val allValidationsString = validationRenderings.toList match {
-            case Nil => ""
-            case head :: tail => f"$head%20s(${tail.mkString("; ")}%s)"
-          }
-          f"$question%-35s --> $allValidationsString"
-      }.mkString("\n") + "\n"
-  }
-
-  def printLatestInfos(n: Int = 5) = {
-    latestInfos(n).map(renderValidation).foreach(println)
-  }
-
-  def printLatestInfosForWorker(workerId: String, n: Int = 5) =
-    infosForWorker(workerId)
-      .takeRight(n)
-      .map(renderValidation)
-      .foreach(println)
-
-  def printWorstInfos(workerId: String, n: Int = 5) =
-    infosForWorker(workerId)
-      .sortBy { hi =>
-      if(hi.assignments.size <= 1) Int.MinValue else {
-        val totalQAPairs = hi.hit.prompt.qaPairs.size.toDouble
-        val agreedQAPairs = hi.assignments.head.response
-          .zip(hi.assignments.tail.map(a => a.response.map(a.workerId -> _)).transpose)
-          .map { case (givenAnswer, refPairs) =>
-            QASRLValidationResponseComparison(
-              givenAnswer,
-              refPairs.filter(p => !valManagerPeek.blockedValidators.contains(p._1))
-            ) }
-          .filter(_.isAgreement).size
-        totalQAPairs - agreedQAPairs } }
-      .takeRight(n)
-      .map(renderValidation)
-      .foreach(println)
 
   case class StatSummary(
     workerId: String,

@@ -38,10 +38,10 @@ import japgolly.scalajs.react.MonocleReact._
 class QASRLEvaluationClient[SID: Writer : Reader](
                                                    instructions: VdomTag)(
                                                    implicit settings: QASRLEvaluationSettings,
-                                                   promptReader: Reader[QASRLValidationPrompt[SID]], // macro serializers don't work for superclass constructor parameters
+                                                   promptReader: Reader[QASRLArbitrationPrompt[SID]], // macro serializers don't work for superclass constructor parameters
                                                    responseWriter: Writer[List[QASRLValidationAnswer]], // same as above
                                                    ajaxRequestWriter: Writer[QASRLValidationAjaxRequest[SID]] // "
-                                                 ) extends TaskClient[QASRLValidationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]] {
+                                                 ) extends TaskClient[QASRLArbitrationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]] {
 
   def main(): Unit = jQuery { () =>
     Styles.addToDocument()
@@ -55,8 +55,8 @@ class QASRLEvaluationClient[SID: Writer : Reader](
 
   import MultiContigSpanHighlightableSentenceComponent._
 
-  lazy val questions = prompt.qaPairs.map(_.question)
-  lazy val proposedAnswers = prompt.qaPairs.map(_.answers)
+  lazy val questions = prompt.qaPairs.map(_._2.question)
+  lazy val proposedAnswers = prompt.qaPairs.map(_._2.answers)
 
   val SpanHighlightingComponent = new SpanHighlightingComponent2(proposedAnswers) // question
   import SpanHighlightingComponent._
@@ -220,7 +220,7 @@ class QASRLEvaluationClient[SID: Writer : Reader](
     }
 
     def stylesForConflicts(state: State): Int => TagMod = {
-      val curVerbIndex = prompt.qaPairs(state.curQuestion).verbIndex
+      val curVerbIndex = prompt.qaPairs(state.curQuestion)._2.verbIndex
       val conflicts = yieldConflictTokens(state)
 
       idx: Int =>

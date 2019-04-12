@@ -18,7 +18,7 @@ import scala.collection.immutable
 import scala.util.Try
 import scala.collection.JavaConverters._
 
-case class QA[SID](sentenceId: SID, verbIndex: Int, question: String, answer: Span, assignId: String)
+case class QA[SID](sentenceId: SID, verbIndex: Int, question: String, answers: List[Span], assignId: String)
 
 class EvaluationSetup(qasrlPath: Path,
                       datasetPath: Path,
@@ -45,28 +45,27 @@ class EvaluationSetup(qasrlPath: Path,
     Files.lines(path).iterator.asScala.toList
   }
 
-  private def decodeAnswerRange(answerRange: String): Vector[Span] = {
+  private def decodeAnswerRange(answerRange: String): List[Span] = {
     val encodedSpans: Vector[String] = answerRange.split("~!~").toVector
     val spans = encodedSpans.map(encSpan => {
       val splits = encSpan.split(':').toVector
       // this project uses exclusive indices
       Span(splits(0).toInt, splits(1).toInt - 1)
     })
-    spans
+    spans.toList
   }
 
-  private def getVerbQas(verbIdx: Int, qaPairs: Vector[QA[SentenceId]]): List[(VerbQA, String)] = {
+  private def getVerbQas(verbIdx: Int, qaPairs: Vector[QA[SentenceId]]): List[(String, VerbQA)] = {
     // qaPairs already belong to a single <sentence, verb>,
     // but may come from multiple assignments
     val sortedQas = qaPairs.sortBy(_.question.split(" ")(0))
     val qasAnsAssigns = for {
-      ((question, assignId), questionGroup) <- sortedQas.groupBy(q => (q.question, q.assignId))
-      spans = questionGroup.map(_.answer)
-    } yield (VerbQA(verbIdx, question, spans.toList), assignId)
+      qa <- sortedQas
+    } yield (qa.assignId, VerbQA(verbIdx, qa.question, qa.answers))
     qasAnsAssigns.toList
   }
 
-  private def getValidationPrompts(qaPairsCsvPath: Path, dataset: Map[String, Vector[String]]): Vector[QASRLValidationPrompt[SentenceId]] = {
+  private def getValidationPrompts(qaPairsCsvPath: Path, dataset: Map[String, Vector[String]]): Vector[QASRLArbitrationPrompt[SentenceId]] = {
     val allRecords = CSVReader.open(qaPairsCsvPath.toString).allWithHeaders()
     val qaPairs = (for {
       rec <- allRecords
@@ -76,17 +75,15 @@ class EvaluationSetup(qasrlPath: Path,
       assignId = rec("assign_id")
       question = rec("question")
       answerRanges = rec("answer_range")
-      answerSpan <- decodeAnswerRange(answerRanges)
-    } yield new QA[SentenceId](SentenceId(sentId), verbIdx, question, answerSpan, assignId)).toVector
+      spans = decodeAnswerRange(answerRanges)
+    } yield new QA[SentenceId](SentenceId(sentId), verbIdx, question, spans, assignId)).toVector
 
     val valPrompts = for {
       (key, qaGroup) <- qaPairs.groupBy(qa => (qa.sentenceId, qa.verbIndex))
       (sentId, verbIdx) = key
       qasAndIds = getVerbQas(verbIdx, qaGroup)
-      verbQas = qasAndIds.map(_._1).toList
-      sourceIds = qasAndIds.map(_._2).toList
       genPrompt = QASRLGenerationPrompt[SentenceId](sentId, verbIdx)
-    } yield QASRLValidationPrompt[SentenceId](genPrompt, "hit_type", "sources", sourceIds.head, verbQas)
+    } yield QASRLArbitrationPrompt[SentenceId](genPrompt, qasAndIds)
     valPrompts.toVector
   }
 
@@ -122,10 +119,10 @@ class EvaluationSetup(qasrlPath: Path,
     Wiktionary.getInflectionsForTokens(tokens)
   }
 
-  def numEvaluationAssignmentsForPrompt(p: QASRLValidationPrompt[SentenceId]) = 1
+  def numEvaluationAssignmentsForPrompt(p: QASRLArbitrationPrompt[SentenceId]) = 1
 
   // use qasrlPath as CSV Path for QA pairs
-  val allPrompts: Vector[QASRLValidationPrompt[SentenceId]] = getValidationPrompts(qasrlPath, dataset)
+  val allPrompts: Vector[QASRLArbitrationPrompt[SentenceId]] = getValidationPrompts(qasrlPath, dataset)
   val experiment = new QASRLEvaluationPipeline[SentenceId](
     allPrompts,
     numEvaluationAssignmentsForPrompt)

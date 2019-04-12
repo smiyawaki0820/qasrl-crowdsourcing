@@ -26,13 +26,13 @@ import com.typesafe.scalalogging.StrictLogging
 
 class QASRLEvaluationHITManager[SID : Reader : Writer](
   valDisqualificationTypeId: String,
-  helper: HITManager.Helper[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]],
-  numAssignmentsForPrompt: QASRLValidationPrompt[SID] => Int,
+  helper: HITManager.Helper[QASRLArbitrationPrompt[SID], List[QASRLValidationAnswer]],
+  numAssignmentsForPrompt: QASRLArbitrationPrompt[SID] => Int,
   initNumHITsToKeepActive: Int,
-  _promptSource: Iterator[QASRLValidationPrompt[SID]])(
+  _promptSource: Iterator[QASRLArbitrationPrompt[SID]])(
   implicit annotationDataService: AnnotationDataService,
   settings: QASRLEvaluationSettings
-) extends NumAssignmentsHITManager[QASRLValidationPrompt[SID], List[QASRLValidationAnswer]](
+) extends NumAssignmentsHITManager[QASRLArbitrationPrompt[SID], List[QASRLValidationAnswer]](
   helper, numAssignmentsForPrompt, initNumHITsToKeepActive, _promptSource, false) {
 
   override lazy val receiveAux2: PartialFunction[Any, Unit] = {
@@ -41,7 +41,7 @@ class QASRLEvaluationHITManager[SID : Reader : Writer](
     case ChristenWorker(workerId, numAgreementsToAdd) => christenWorker(workerId, numAgreementsToAdd)
   }
 
-  override def promptFinished(prompt: QASRLValidationPrompt[SID]): Unit = {
+  override def promptFinished(prompt: QASRLArbitrationPrompt[SID]): Unit = {
     val assignments = helper.allCurrentHITInfos(prompt).flatMap(_.assignments)
     val numValid = QASRLValidationAnswer.numValidQuestions(assignments.map(_.response))
     evaluationStats = assignments.map(a => a.response.map(ans => a.workerId -> ans)).transpose :: evaluationStats
@@ -157,7 +157,7 @@ class QASRLEvaluationHITManager[SID : Reader : Writer](
     }
   }
 
-  override def reviewAssignment(hit: HIT[QASRLValidationPrompt[SID]], assignment: Assignment[List[QASRLValidationAnswer]]): Unit = {
+  override def reviewAssignment(hit: HIT[QASRLArbitrationPrompt[SID]], assignment: Assignment[List[QASRLValidationAnswer]]): Unit = {
     helper.evaluateAssignment(hit, helper.startReviewing(assignment), Approval(""))
     if(!assignment.feedback.isEmpty) {
       feedbacks = assignment :: feedbacks
