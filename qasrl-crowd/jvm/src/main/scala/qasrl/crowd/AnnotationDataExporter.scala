@@ -83,6 +83,7 @@ class AnnotationDataExporter[SID : HasTokens](
                                workerAnonymizationMapping(a.workerId),
                                valAnswer match {
                                  case qasrl.crowd.InvalidQuestion => qasrl.data.InvalidQuestion
+                                 case qasrl.crowd.RedundantQuestion => qasrl.data.InvalidQuestion
                                  case qasrl.crowd.Answer(spans) => Answer(
                                    spans.map(s => AnswerSpan(s.begin, s.end + 1)).toSet
                                  )

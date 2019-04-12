@@ -81,14 +81,14 @@ class QASRLEvaluationClient[SID: Writer : Reader](
       setResponse(state.answers)
     }
 
-    def updateCurrentAnswers(highlightingState: SpanHighlightingState) =
+    def updateCurrentAnswers(highlightingState: SpanHighlightingState) = {
       scope.state >>= (st =>
         scope.modState(
-          answerSpanOptics(st.curQuestion).set(
-            highlightingState.spans(st.curQuestion)
-          )
+          answerSpanOptics(st.curQuestion).set(highlightingState.spans(st.curQuestion))
         )
         )
+    }
+
 
     def toggleInvalidAtIndex(highlightedAnswers: Map[Int, Answer])(questionIndex: Int) =
       scope.modState(
@@ -99,6 +99,17 @@ class QASRLEvaluationClient[SID: Writer : Reader](
             else InvalidQuestion)
         )
       )
+
+    def toggleRedundantAtIndex(highlightedAnswers: Map[Int, Answer])(questionIndex: Int) = {
+      scope.modState(
+        State.answers.modify(answers =>
+          answers.updated(
+            questionIndex,
+            if (answers(questionIndex).isRedundant) highlightedAnswers(questionIndex)
+            else RedundantQuestion
+          )
+        ))
+    }
 
     def handleKey(highlightedAnswers: Map[Int, Answer])(e: ReactKeyboardEvent): Callback = {
       def nextQuestion = scope.modState(State.curQuestion.modify(i => (i + 1) % questions.size))
@@ -134,6 +145,18 @@ class QASRLEvaluationClient[SID: Writer : Reader](
           ^.onClick --> toggleInvalidAtIndex(highlightedAnswers)(index),
           "Invalid"
         ),
+        <.div(
+          Styles.unselectable,
+          ^.float := "left",
+          ^.minHeight := "1px",
+          ^.border := "1px solid",
+          ^.borderRadius := "2px",
+          ^.textAlign := "center",
+          ^.width := "120px",
+          (^.backgroundColor := "#E01010").when(answer.isRedundant),
+          ^.onClick --> toggleRedundantAtIndex(highlightedAnswers)(index),
+          "Redundant"
+        ),
         <.span(
           Styles.bolded.when(isFocused),
           Styles.unselectable,
@@ -160,6 +183,10 @@ class QASRLEvaluationClient[SID: Writer : Reader](
               ^.color := "#CCCCCC",
               "N/A"
             )
+            case RedundantQuestion => <.span(
+              ^.color := "#CCCCCC",
+              "Redundant"
+            )
             case Answer(spans) if spans.isEmpty && isFocused =>
               <.span(
                 ^.color := "#CCCCCC",
@@ -177,19 +204,24 @@ class QASRLEvaluationClient[SID: Writer : Reader](
       )
     }
 
-    def stylesForConflicts(state: State): Int => TagMod = {
+    def yieldConflictTokens(state: State): Set[Int] = {
       val allSpans = state.answers.flatMap {
         case Answer(spans) => spans
         case InvalidQuestion => List.empty[Span]
+        case RedundantQuestion => List.empty[Span]
       }.toVector
       val tokens = allSpans.flatMap(span => span.begin to span.end)
 
-      val conflicts: Set[Int] = (for {
+      val conflicts = (for {
         (token, tokenGroup) <- tokens.groupBy(identity)
         if tokenGroup.size > 1
-      } yield token).toSet
+      } yield token)
+      conflicts.toSet
+    }
 
+    def stylesForConflicts(state: State): Int => TagMod = {
       val curVerbIndex = prompt.qaPairs(state.curQuestion).verbIndex
+      val conflicts = yieldConflictTokens(state)
 
       idx: Int =>
         if (conflicts.contains(idx)) {
@@ -199,7 +231,7 @@ class QASRLEvaluationClient[SID: Writer : Reader](
         }
     }
 
-    private def highlightSpans(state: State,inProgressAnswerOpt: Option[Span]) = {
+    private def highlightSpans(state: State, inProgressAnswerOpt: Option[Span]) = {
       val currentAnswers: List[Span] = state.answers(state.curQuestion).getSpans
       val otherAnswers = (for {
         i <- state.answers.indices
@@ -212,6 +244,12 @@ class QASRLEvaluationClient[SID: Writer : Reader](
       val other = otherAnswers.map(_ -> (^.backgroundColor := "#DDDDDD"))
       val allDone = (current ++ other).map(Some(_))
       (inProgress :: allDone).flatten
+    }
+
+    def isSubmitEnabled(state: State): Boolean = {
+      val isComplete = state.answers.forall(_.isComplete)
+      val hasConflicts = yieldConflictTokens(state).nonEmpty
+      isComplete && !hasConflicts
     }
 
 
@@ -236,17 +274,13 @@ class QASRLEvaluationClient[SID: Writer : Reader](
                   render = {
                     case (hs@SpanHighlightingState(spans, status), SpanHighlightingContext(_, hover, touch, cancelHighlight)) =>
 
-                      val curVerbIndex = prompt.qaPairs(curQuestion).verbIndex
                       val inProgressAnswerOpt = SpanHighlightingStatus.highlighting.getOption(status).map {
                         case Highlighting(_, anchor, endpoint) => Span(anchor, endpoint)
                       }
-                      val curAnswers = spans(curQuestion)
-                      val otherAnswers = (spans - curQuestion).values.flatten
                       val highlightedAnswers = prompt.qaPairs.indices.map(i =>
                         i -> Answer(spans(i))
                       ).toMap
 
-                      val isCurrentInvalid = answers(curQuestion).isInvalid
                       val touchWord = touch(curQuestion)
                       <.div(
                         ^.classSet1("container-fluid"),
@@ -363,11 +397,11 @@ class QASRLEvaluationClient[SID: Writer : Reader](
                           ^.classSet1("btn btn-primary btn-lg btn-block"),
                           ^.margin := "5px",
                           ^.`type` := "submit",
-                          ^.disabled := !state.answers.forall(_.isComplete),
+                          ^.disabled := !isSubmitEnabled(state),
                           ^.id := FieldLabels.submitButtonLabel,
                           ^.value := (
                             if (isNotAssigned) "You must accept the HIT to submit results"
-                            else if (!state.answers.forall(_.isComplete)) "You must respond to all questions to submit results"
+                            else if (!isSubmitEnabled(state)) "You must resolve all redundancies and respond to all questions to submit results"
                             else "Submit"
                             ))
                       )
