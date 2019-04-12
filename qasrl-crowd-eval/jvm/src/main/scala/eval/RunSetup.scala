@@ -26,11 +26,15 @@ object RunSetup extends App {
   val httpPort = 8888
   val httpsPort = 8080
 
-  val BATCH_NUMBER = 0
-
-  val annotationPath = Paths.get(s"data/annotations/wikinews")
-  val liveDataPath = Paths.get(s"data/live/wikinwews")
-  val qasrlPath = Paths.get(s"data/wikinews.dev.data.csv")
+  // Uncomment the phase you want to activate
+  //val phase = Trap
+  val phase = Training
+  //val phase = Production
+  val phaseName = phase.toString.toLowerCase
+  val annotationPath = Paths.get(s"data/annotations.$phaseName")
+  val liveDataPath = Paths.get(s"data/live.$phaseName")
+  val sentsPath = Paths.get(s"data/$phaseName.csv")
+  val qasrlPath = Paths.get(s"data/$phaseName.annot.csv")
 
   implicit val timeout = akka.util.Timeout(5.seconds)
   implicit val config: TaskConfig = {
@@ -42,8 +46,7 @@ object RunSetup extends App {
       SandboxTaskConfig(projectName, domain, interface, httpPort, httpsPort, hitDataService)
     }
   }
-  val genTypeId = "./data/wikinews.clustered.conflicts.csv"
-  val setup = new EvaluationSetup(genTypeId, qasrlPath, liveDataPath)
+  val setup = new EvaluationSetup(qasrlPath, sentsPath, liveDataPath)
 
   import setup.SentenceIdHasTokens
 

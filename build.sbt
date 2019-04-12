@@ -4,7 +4,7 @@ val monocleVersion = "1.4.0-M2"
 val circeVersion = "0.8.0"
 
 lazy val root = project.in(file("."))
-  .aggregate(qasrlJVM, qasrlJS, crowdJVM, crowdJS, exampleJVM, exampleJS) /* evalJVM, evalJS) */
+  .aggregate(qasrlJVM, qasrlJS, crowdJVM, crowdJS,/* exampleJVM, exampleJS) */ evalJVM, evalJS) /**/
   .settings(
   publish := {},
   publishLocal := {})

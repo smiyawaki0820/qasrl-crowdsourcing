@@ -2,7 +2,7 @@ package eval
 
 import java.nio.file.{Files, Path, Paths}
 
-import com.github.tototoshi.csv.CSVReader
+import com.github.tototoshi.csv.{CSVReader, CSVWriter}
 import com.typesafe.scalalogging.StrictLogging
 import example.Tokenizer
 import nlpdata.datasets.wiktionary
@@ -18,12 +18,12 @@ import scala.collection.immutable
 import scala.util.Try
 import scala.collection.JavaConverters._
 
-case class QA[SID](sentenceId: SID, verbIndex: Int, question: String, answer: Span)
+case class QA[SID](sentenceId: SID, verbIndex: Int, question: String, answer: Span, assignId: String)
 
-class EvaluationSetup(qasrlPath: String,
+class EvaluationSetup(qasrlPath: Path,
                       datasetPath: Path,
                       liveDataPath: Path)(
-  implicit config: TaskConfig) extends StrictLogging{
+                       implicit config: TaskConfig) extends StrictLogging {
 
   val resourcePath = java.nio.file.Paths.get("datasets")
   val staticDataPath = Paths.get(s"data/static")
@@ -33,7 +33,7 @@ class EvaluationSetup(qasrlPath: String,
   def saveOutputFile(name: String, contents: String): Try[Unit] = Try {
     val path = staticDataPath.resolve("out").resolve(name)
     val directory = path.getParent
-    if(!Files.exists(directory)) {
+    if (!Files.exists(directory)) {
       Files.createDirectories(directory)
     }
     Files.write(path, contents.getBytes())
@@ -45,35 +45,9 @@ class EvaluationSetup(qasrlPath: String,
     Files.lines(path).iterator.asScala.toList
   }
 
-  private def flattenHitInfos[SID](hitInfos: List[HITInfo[QASRLGenerationPrompt[SID], List[VerbQA]]]) = {
-    val flats: Vector[QA[SID]] = (for {
-      hitInfo <- hitInfos
-      sid = hitInfo.hit.prompt.id
-      verbIndex = hitInfo.hit.prompt.verbIndex
-      assignment <- hitInfo.assignments
-      resp <- assignment.response
-      question = resp.question
-      answer <- resp.answers
-    } yield QA(sid, verbIndex, question, answer)).toVector
-    flats
-  }
-
-  private def getValidationPrompts(genTypeId: String): Vector[QASRLValidationPrompt[SentenceId]] = {
-    val hitService = config.hitDataService
-    val genInfos = hitService.getAllHITInfo[QASRLGenerationPrompt[SentenceId], List[VerbQA]](genTypeId).get
-    val valPrompts = for {
-      genInfo <- genInfos
-      hit = genInfo.hit
-      assign <- genInfo.assignments
-      qas = assign.response
-    } yield QASRLValidationPrompt[SentenceId](hit.prompt, hit.hitTypeId, hit.hitId, assign.assignmentId, qas)
-    valPrompts.toVector
-  }
-
-
   private def decodeAnswerRange(answerRange: String): Vector[Span] = {
     val encodedSpans: Vector[String] = answerRange.split("~!~").toVector
-    val spans = encodedSpans.map( encSpan => {
+    val spans = encodedSpans.map(encSpan => {
       val splits = encSpan.split(':').toVector
       // this project uses exclusive indices
       Span(splits(0).toInt, splits(1).toInt - 1)
@@ -81,13 +55,15 @@ class EvaluationSetup(qasrlPath: String,
     spans
   }
 
-  private def getVerbQas(verbIdx: Int, qaPairs: Vector[QA[SentenceId]]): List[VerbQA] = {
-    // qaPairs already belong to a single <sentence, verb>
-    val verbQas = for {
-      (question, questionGroup) <- qaPairs.groupBy(_.question)
+  private def getVerbQas(verbIdx: Int, qaPairs: Vector[QA[SentenceId]]): List[(VerbQA, String)] = {
+    // qaPairs already belong to a single <sentence, verb>,
+    // but may come from multiple assignments
+    val sortedQas = qaPairs.sortBy(_.question.split(" ")(0))
+    val qasAnsAssigns = for {
+      ((question, assignId), questionGroup) <- sortedQas.groupBy(q => (q.question, q.assignId))
       spans = questionGroup.map(_.answer)
-    } yield VerbQA(verbIdx, question, spans.toList)
-    verbQas.toList
+    } yield (VerbQA(verbIdx, question, spans.toList), assignId)
+    qasAnsAssigns.toList
   }
 
   private def getValidationPrompts(qaPairsCsvPath: Path, dataset: Map[String, Vector[String]]): Vector[QASRLValidationPrompt[SentenceId]] = {
@@ -97,19 +73,20 @@ class EvaluationSetup(qasrlPath: String,
       sentId = rec("qasrl_id")
       sent = dataset(sentId)
       verbIdx = rec("verb_idx").toInt
+      assignId = rec("assign_id")
       question = rec("question")
       answerRanges = rec("answer_range")
-      answerSpan <- decodeAnswerRange(answerRanges )
-    } yield new QA[SentenceId](SentenceId(sentId), verbIdx, question, answerSpan)).toVector
+      answerSpan <- decodeAnswerRange(answerRanges)
+    } yield new QA[SentenceId](SentenceId(sentId), verbIdx, question, answerSpan, assignId)).toVector
 
     val valPrompts = for {
       (key, qaGroup) <- qaPairs.groupBy(qa => (qa.sentenceId, qa.verbIndex))
       (sentId, verbIdx) = key
-      verbQas = getVerbQas(verbIdx, qaGroup)
+      qasAndIds = getVerbQas(verbIdx, qaGroup)
+      verbQas = qasAndIds.map(_._1).toList
+      sourceIds = qasAndIds.map(_._2).toList
       genPrompt = QASRLGenerationPrompt[SentenceId](sentId, verbIdx)
-    } yield QASRLValidationPrompt[SentenceId](genPrompt,"consolidated_crowd",
-      "consolidated_crowd_hit_id",
-      "consolidated_crowd_assign_id", verbQas)
+    } yield QASRLValidationPrompt[SentenceId](genPrompt, "hit_type", "sources", sourceIds.head, verbQas)
     valPrompts.toVector
   }
 
@@ -148,11 +125,30 @@ class EvaluationSetup(qasrlPath: String,
   def numEvaluationAssignmentsForPrompt(p: QASRLValidationPrompt[SentenceId]) = 1
 
   // use qasrlPath as CSV Path for QA pairs
-  val allPrompts: Vector[QASRLValidationPrompt[SentenceId]] = getValidationPrompts(Paths.get(qasrlPath), dataset)
+  val allPrompts: Vector[QASRLValidationPrompt[SentenceId]] = getValidationPrompts(qasrlPath, dataset)
   val experiment = new QASRLEvaluationPipeline[SentenceId](
     allPrompts,
     numEvaluationAssignmentsForPrompt)
 
   val exp = experiment
+
+  val qasrlColumns = List(
+    "qasrl_id", "verb_idx", "verb",
+    "worker_id", "assign_id",
+    "question", "is_redundant", "answer_range", "answer",
+    "wh", "subj", "obj", "obj2", "aux", "prep", "verb_prefix",
+    "is_passive", "is_negated")
+
+  def saveArbitrationData(filename: String,
+                          valInfos: List[HITInfo[QASRLValidationPrompt[SentenceId], List[QASRLValidationAnswer]]]): Unit = {
+    val contents: List[QASRL] = DataIO.makeArbitrationQAPairTSV(SentenceId.toString, valInfos).toList
+    val path = liveDataPath.resolve(filename).toString
+    val csv = CSVWriter.open(path, encoding = "utf-8")
+    csv.writeRow(qasrlColumns)
+    for (qasrl <- contents) {
+      // will iterate in order over the case class fields
+      csv.writeRow(qasrl.productIterator.toList)
+    }
+  }
 
 }

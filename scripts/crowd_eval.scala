@@ -16,19 +16,29 @@ import nlpdata.util.HasTokens.ops._
 
 
 val isProduction = false // sandbox. change to true for production
-val domain = "localhost" // change to your domain, or keep localhost for testing
-val projectName = "qasrl-crowd-eval" // make sure it matches the SBT project;
 // this is how the .js file is found to send to the server
 
+//val domain = "localhost" // change to your domain, or keep localhost for testing
+//val projectName = "qasrl-crowd-eval" // make sure it matches the SBT project;
+//val interface = "0.0.0.0"
+//val httpPort = 8888
+//val httpsPort = 8080
+
+ Ports and domains on te-srv4
+val domain = "u.cs.biu.ac.il/~stanovg/qasrl" // change to your domain, or keep localhost for testing
 val interface = "0.0.0.0"
-val httpPort = 8888
-val httpsPort = 8080
+val httpPort = 5908
+val httpsPort = 5908
 
-val BATCH_NUMBER = 0
-
-val annotationPath = Paths.get(s"data/annotations/ecb_${BATCH_NUMBER}")
-val liveDataPath = Paths.get(s"data/live/ecb_${BATCH_NUMBER}")
-val qasrlPath = Paths.get(s"data/ecb/ECBPlus.qasrl.batch_${BATCH_NUMBER}.csv")
+// Uncomment the phase you want to activate
+//val phase = Trap
+val phase = Training
+//val phase = Production
+val phaseName = phase.toString.toLowerCase
+val annotationPath = Paths.get(s"data/annotations.$phaseName")
+val liveDataPath = Paths.get(s"data/live.$phaseName")
+val sentsPath = Paths.get(s"data/$phaseName.csv")
+val qasrlPath = Paths.get(s"data/$phaseName.annot.csv")
 
 implicit val timeout = akka.util.Timeout(5.seconds)
 implicit val config: TaskConfig = {
@@ -51,9 +61,7 @@ def exit = {
   System.out.println("Terminated actor system and logging. Type :q to end.")
 }
 
-//val genTypeId = "3DCAAKVOXBFBBYTGQJIY30T65H3FYZ"
-val genTypeId = "./data/wikinews.clustered.conflicts.csv"
-val setup = new EvaluationSetup(genTypeId, qasrlPath, liveDataPath)
+val setup = new EvaluationSetup(qasrlPath, sentsPath, liveDataPath)
 
 import setup.SentenceIdHasTokens
 
@@ -75,65 +83,6 @@ def yesterday = {
 
 import scala.collection.JavaConverters._
 
-def expireHITById(hitId: String) = {
-  config.service.updateExpirationForHIT(
-    (new UpdateExpirationForHITRequest)
-      .withHITId(hitId)
-      .withExpireAt(yesterday))
-}
-
-def approveAllAssignmentsByHITId(hitId: String) = for {
-  mTurkAssignment <- config.service.listAssignmentsForHIT(
-    new ListAssignmentsForHITRequest()
-      .withHITId(hitId)
-      .withAssignmentStatuses(AssignmentStatus.Submitted)
-    ).getAssignments.asScala.toList
-} yield config.service.approveAssignment(
-  new ApproveAssignmentRequest()
-    .withAssignmentId(mTurkAssignment.getAssignmentId)
-    .withRequesterFeedback(""))
-
-def deleteHITById(hitId: String) =
-  config.service.deleteHIT((new DeleteHITRequest).withHITId(hitId))
-
-def disableHITById(hitId: String) = {
-  expireHITById(hitId)
-  deleteHITById(hitId)
-}
-
-def getActiveHits = {
-  config.service.listAllHITs
-}
-
-def getActiveHITIds = {
-  getActiveHits.map(_.getHITId)
-}
-
-def flushAll(): Unit = {
-  for(hitId <- getActiveHITIds) {
-    disableHITById(hitId)
-  }
-}
-
-def hitInfo(hit: com.amazonaws.services.mturk.model.HIT): String = {
-  val hitType = hit.getHITTypeId match {
-    case exp.valTaskSpec.hitTypeId => "Evaluation"
-//    case exp.genTaskSpec.hitTypeId => "Generation"
-    case _ => "UNKNOWN"
-  }
-  val info = s"${hit.getHITId}\t${hitType}\t${hit.getHITStatus}\t${hit.getCreationTime}"
-  info
-}
-
-def printMTurkHits() = {
-  val hitInfoHeading = s"id\thit_type\tstatus\tcreation_date"
-  
-  println(hitInfoHeading)
-  for (hit <- getActiveHits) {
-    val info = hitInfo(hit)
-    println(info)
-  }
-}
 
 def progress() = {
   val totalPrompts = exp.allPrompts.length
@@ -146,25 +95,6 @@ def progress() = {
   println(s"HitTypeId: ${exp.valTaskSpec.hitTypeId}")
   println(f"uploaded: $uploadedPrompts / $totalPrompts ")
   println(f"Completed: $completedPrompts / $totalPrompts ")
-}
-
-
-def savedHits(): Unit = {
-  val infos = for {
-    info <- exp.allInfos
-    hid = info.hit.hitId
-    sid = info.hit.prompt.genPrompt.id
-    vid = info.hit.prompt.genPrompt.verbIndex
-    questions = info.hit.prompt.qaPairs.map(_.question)
-    ass <- info.assignments
-    wid = ass.workerId
-    aid = ass.assignmentId
-    (question, valAnswer) <- questions.zip(ass.response)
-    theAnswer = QASRLValidationAnswer.render(sid.tokens, valAnswer)
-
-  } yield f"${sid.id}\t$vid\t$question\t$theAnswer\t$wid\t$aid\t$hid"
-  println("sent_id\tverb_idx\tquestion\tanswer\tworker_id\tassign_id\thit_id")
-  infos.foreach(println)
 }
 
 

@@ -21,14 +21,20 @@ sealed trait QASRLValidationAnswer {
   }
 
   def getAnswer = this match {
-    case a @ Answer(_) => Some(a)
+    case a@Answer(_) => Some(a)
     case _ => None
   }
+
   def isAnswer = getAnswer.nonEmpty
 
   def isComplete = this match {
     case InvalidQuestion => true
     case Answer(indices) => indices.nonEmpty
+  }
+
+  def getSpans = this match {
+    case Answer(spans) => spans
+    case _ => Nil
   }
 
   def agreesWith(that: QASRLValidationAnswer) = (this, that) match {
@@ -42,7 +48,9 @@ sealed trait QASRLValidationAnswer {
     case _ => false
   }
 }
+
 case object InvalidQuestion extends QASRLValidationAnswer
+
 @Lenses case class Answer(spans: List[Span]) extends QASRLValidationAnswer
 
 object QASRLValidationAnswer {
@@ -55,16 +63,16 @@ object QASRLValidationAnswer {
   // render a validation answer for the purpose of writing to a file
   // (just writes the highlighted indices of the answer; not readable)
   def renderIndices(
-    va: QASRLValidationAnswer
-  ): String = va match {
+                     va: QASRLValidationAnswer
+                   ): String = va match {
     case InvalidQuestion => "Invalid"
     case Answer(spans) => spans.map { case Span(begin, end) => s"$begin-$end" }.mkString(" / ")
   }
 
   // inverse of QASRLValidationAnswer.renderIndices
   def readIndices(
-    s: String
-  ): QASRLValidationAnswer = s match {
+                   s: String
+                 ): QASRLValidationAnswer = s match {
     case "Invalid" => InvalidQuestion
     case other => Answer(
       other.split(" / ").toList.map(is =>
@@ -78,9 +86,9 @@ object QASRLValidationAnswer {
 
   // render a validation response in a readable way for browsing
   def render(
-    sentence: Vector[String],
-    va: QASRLValidationAnswer
-  ): String = va match {
+              sentence: Vector[String],
+              va: QASRLValidationAnswer
+            ): String = va match {
     case InvalidQuestion => "<Invalid>"
     case Answer(spans) => spans.map(span => Text.renderSpan(sentence, (span.begin to span.end).toSet)).mkString(" / ")
   }
