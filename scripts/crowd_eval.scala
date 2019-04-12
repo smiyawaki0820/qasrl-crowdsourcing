@@ -16,15 +16,15 @@ import nlpdata.util.HasTokens.ops._
 
 
 val isProduction = false // sandbox. change to true for production
+val projectName = "qasrl-crowd-eval" // make sure it matches the SBT project;
 // this is how the .js file is found to send to the server
 
 //val domain = "localhost" // change to your domain, or keep localhost for testing
-//val projectName = "qasrl-crowd-eval" // make sure it matches the SBT project;
 //val interface = "0.0.0.0"
 //val httpPort = 8888
 //val httpsPort = 8080
 
- Ports and domains on te-srv4
+// Ports and domains on te-srv4
 val domain = "u.cs.biu.ac.il/~stanovg/qasrl" // change to your domain, or keep localhost for testing
 val interface = "0.0.0.0"
 val httpPort = 5908

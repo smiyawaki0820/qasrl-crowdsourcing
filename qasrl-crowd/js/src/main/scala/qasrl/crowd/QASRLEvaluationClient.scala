@@ -35,13 +35,13 @@ import monocle.function.{all => Optics}
 import monocle.macros._
 import japgolly.scalajs.react.MonocleReact._
 
-class QASRLEvaluationClient[SID : Writer : Reader](
-  instructions: VdomTag)(
-  implicit settings: QASRLEvaluationSettings,
-  promptReader: Reader[QASRLValidationPrompt[SID]], // macro serializers don't work for superclass constructor parameters
-  responseWriter: Writer[List[QASRLValidationAnswer]], // same as above
-  ajaxRequestWriter: Writer[QASRLValidationAjaxRequest[SID]] // "
-) extends TaskClient[QASRLValidationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]] {
+class QASRLEvaluationClient[SID: Writer : Reader](
+                                                   instructions: VdomTag)(
+                                                   implicit settings: QASRLEvaluationSettings,
+                                                   promptReader: Reader[QASRLValidationPrompt[SID]], // macro serializers don't work for superclass constructor parameters
+                                                   responseWriter: Writer[List[QASRLValidationAnswer]], // same as above
+                                                   ajaxRequestWriter: Writer[QASRLValidationAjaxRequest[SID]] // "
+                                                 ) extends TaskClient[QASRLValidationPrompt[SID], List[QASRLValidationAnswer], QASRLValidationAjaxRequest[SID]] {
 
   def main(): Unit = jQuery { () =>
     Styles.addToDocument()
@@ -49,6 +49,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
   }
 
   val AsyncContentComponent = new AsyncContentComponent[QASRLValidationAjaxResponse]
+
   import AsyncContentComponent._
 
 
@@ -61,9 +62,10 @@ class QASRLEvaluationClient[SID : Writer : Reader](
   import SpanHighlightingComponent._
 
   @Lenses case class State(
-    curQuestion: Int,
-    isInterfaceFocused: Boolean,
-    answers: List[QASRLValidationAnswer])
+                            curQuestion: Int,
+                            isInterfaceFocused: Boolean,
+                            answers: List[QASRLValidationAnswer])
+
   object State {
     def initial = State(0, false, proposedAnswers.map(spans => Answer(spans)))
   }
@@ -86,24 +88,26 @@ class QASRLEvaluationClient[SID : Writer : Reader](
             highlightingState.spans(st.curQuestion)
           )
         )
-      )
+        )
 
     def toggleInvalidAtIndex(highlightedAnswers: Map[Int, Answer])(questionIndex: Int) =
       scope.modState(
         State.answers.modify(answers =>
           answers.updated(
             questionIndex,
-            if(answers(questionIndex).isInvalid) highlightedAnswers(questionIndex)
+            if (answers(questionIndex).isInvalid) highlightedAnswers(questionIndex)
             else InvalidQuestion)
         )
       )
 
     def handleKey(highlightedAnswers: Map[Int, Answer])(e: ReactKeyboardEvent): Callback = {
       def nextQuestion = scope.modState(State.curQuestion.modify(i => (i + 1) % questions.size))
+
       def prevQuestion = scope.modState(State.curQuestion.modify(i => (i + questions.size - 1) % questions.size))
+
       def toggleInvalid = scope.zoomStateL(State.curQuestion).state >>= toggleInvalidAtIndex(highlightedAnswers)
 
-      if(isNotAssigned) {
+      if (isNotAssigned) {
         Callback.empty
       } else CallbackOption.keyCodeSwitch(e) {
         case KeyCode.Up | KeyCode.W => prevQuestion
@@ -162,11 +166,11 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                 "Highlight answer above, move with arrow keys or mouse")
             case Answer(spans) if isFocused => // spans nonempty
               (spans.flatMap { span =>
-                 List(
-                   <.span(Text.renderSpan(sentence, (span.begin to span.end).toSet)),
-                   <.span(" / ")
-                 )
-               } ++ List(<.span(^.color := "#CCCCCC", "Highlight to add an answer"))).toVdomArray
+                List(
+                  <.span(Text.renderSpan(sentence, (span.begin to span.end).toSet)),
+                  <.span(" / ")
+                )
+              } ++ List(<.span(^.color := "#CCCCCC", "Highlight to add an answer"))).toVdomArray
             case Answer(spans) => spans.map(s => Text.renderSpan(sentence, (s.begin to s.end).toSet)).mkString(" / ")
           }
         )
@@ -174,25 +178,42 @@ class QASRLEvaluationClient[SID : Writer : Reader](
     }
 
     def stylesForConflicts(state: State): Int => TagMod = {
-      val allSpans = state.answers.flatMap{
+      val allSpans = state.answers.flatMap {
         case Answer(spans) => spans
         case InvalidQuestion => List.empty[Span]
       }.toVector
-      val tokens = allSpans.flatMap(span => span.begin to span.end )
+      val tokens = allSpans.flatMap(span => span.begin to span.end)
 
-      val conflicts : Set[Int] = (for  {
+      val conflicts: Set[Int] = (for {
         (token, tokenGroup) <- tokens.groupBy(identity)
         if tokenGroup.size > 1
-      } yield token ).toSet
+      } yield token).toSet
 
       val curVerbIndex = prompt.qaPairs(state.curQuestion).verbIndex
 
-      idx: Int => if (conflicts.contains(idx)) {
-        TagMod(Styles.badRed)
-      } else {
-        TagMod(Styles.specialWord, Styles.niceBlue).when(idx == curVerbIndex)
-      }
+      idx: Int =>
+        if (conflicts.contains(idx)) {
+          TagMod(Styles.badRed)
+        } else {
+          TagMod(Styles.specialWord, Styles.niceBlue).when(idx == curVerbIndex)
+        }
     }
+
+    private def highlightSpans(state: State,inProgressAnswerOpt: Option[Span]) = {
+      val currentAnswers: List[Span] = state.answers(state.curQuestion).getSpans
+      val otherAnswers = (for {
+        i <- state.answers.indices
+        if i != state.curQuestion
+        span <- state.answers(i).getSpans
+      } yield span).toList
+
+      val inProgress: Option[(Span, TagMod)] = inProgressAnswerOpt.map(_ -> (^.backgroundColor := "#FF8000"))
+      val current = currentAnswers.map(_ -> (^.backgroundColor := "#FFFF00"))
+      val other = otherAnswers.map(_ -> (^.backgroundColor := "#DDDDDD"))
+      val allDone = (current ++ other).map(Some(_))
+      (inProgress :: allDone).flatten
+    }
+
 
     def render(state: State) = {
       AsyncContent(
@@ -213,7 +234,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                   enableSpanOverlap = true,
                   update = updateCurrentAnswers,
                   render = {
-                    case (hs @ SpanHighlightingState(spans, status), SpanHighlightingContext(_, hover, touch, cancelHighlight)) =>
+                    case (hs@SpanHighlightingState(spans, status), SpanHighlightingContext(_, hover, touch, cancelHighlight)) =>
 
                       val curVerbIndex = prompt.qaPairs(curQuestion).verbIndex
                       val inProgressAnswerOpt = SpanHighlightingStatus.highlighting.getOption(status).map {
@@ -244,8 +265,8 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                                 Styles.bolded,
                                 """Proportion of questions you marked invalid: """,
                                 <.span(
-                                  if(summary.proportionInvalid < settings.invalidProportionEstimateLowerBound ||
-                                       summary.proportionInvalid > settings.invalidProportionEstimateUpperBound) {
+                                  if (summary.proportionInvalid < settings.invalidProportionEstimateLowerBound ||
+                                    summary.proportionInvalid > settings.invalidProportionEstimateUpperBound) {
                                     Styles.badRed
                                   } else {
                                     Styles.goodGreen
@@ -257,17 +278,17 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                               s""" This should generally be between
                                    ${(settings.invalidProportionEstimateLowerBound * 100).toInt}% and
                                    ${(settings.invalidProportionEstimateUpperBound * 100).toInt}%.""",
-                              (if(summary.proportionInvalid < 0.15) " Please be harsher on bad questions. "
-                               else "")
+                              (if (summary.proportionInvalid < 0.15) " Please be harsher on bad questions. "
+                              else "")
                             ).when(!summary.proportionInvalid.isNaN),
                             <.p(
                               <.span(
                                 Styles.bolded,
                                 "Agreement score: ",
                                 <.span(
-                                  if(summary.agreement <= settings.validationAgreementBlockingThreshold) {
+                                  if (summary.agreement <= settings.validationAgreementBlockingThreshold) {
                                     Styles.badRed
-                                  } else if(summary.agreement <= settings.validationAgreementBlockingThreshold + 0.025) {
+                                  } else if (summary.agreement <= settings.validationAgreementBlockingThreshold + 0.025) {
                                     TagMod(Styles.uncomfortableOrange, Styles.bolded)
                                   } else {
                                     Styles.goodGreen
@@ -301,16 +322,13 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                             ^.textAlign := "center",
                             ^.color := "rgba(48, 140, 20, .3)",
                             ^.fontSize := "48pt",
-                            (if(isNotAssigned) "Accept assignment to start" else "Click here to start")
+                            (if (isNotAssigned) "Accept assignment to start" else "Click here to start")
                           ).when(!isInterfaceFocused),
                           MultiContigSpanHighlightableSentence(
                             MultiContigSpanHighlightableSentenceProps(
                               sentence = sentence,
                               styleForIndex = stylesForConflicts(state),
-                              highlightedSpans = (
-                                inProgressAnswerOpt.map(_ -> (^.backgroundColor := "#FF8000")) ::
-                                (curAnswers.map(_ -> (^.backgroundColor := "#FFFF00")) ++
-                                otherAnswers.map(_ -> (^.backgroundColor := "#DDDDDD"))).map(Some(_))).flatten,
+                              highlightedSpans = highlightSpans(state, inProgressAnswerOpt),
                               hover = hover(state.curQuestion),
                               touch = touch(state.curQuestion),
                               render = (elements =>
@@ -318,7 +336,7 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                                   Styles.largeText,
                                   Styles.unselectable,
                                   elements.toVdomArray)
-                              ))
+                                ))
                           ),
                           <.ul(
                             ^.classSet1("list-unstyled"),
@@ -348,10 +366,10 @@ class QASRLEvaluationClient[SID : Writer : Reader](
                           ^.disabled := !state.answers.forall(_.isComplete),
                           ^.id := FieldLabels.submitButtonLabel,
                           ^.value := (
-                            if(isNotAssigned) "You must accept the HIT to submit results"
-                            else if(!state.answers.forall(_.isComplete)) "You must respond to all questions to submit results"
+                            if (isNotAssigned) "You must accept the HIT to submit results"
+                            else if (!state.answers.forall(_.isComplete)) "You must respond to all questions to submit results"
                             else "Submit"
-                          ))
+                            ))
                       )
                   }
                 )
