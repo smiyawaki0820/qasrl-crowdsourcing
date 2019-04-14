@@ -18,7 +18,7 @@ abstract class QASRLDispatcher[SID : Reader : Writer](implicit settings: QASRLSe
 
   lazy val genTrapClient = new QASRLGenerationSimplifiedClient[SID](generationInstructions(Trap))
   lazy val genTrainClient = new QASRLGenerationSimplifiedClient[SID](generationInstructions(Training))
-  lazy val genProdClient = new QASRLGenerationSimplifiedClient[SID](generationInstructions(Production))
+  lazy val genProdClient = new QASRLGenerationSimplifiedClient[SID](generationInstructions(Production(-1)))
 
   lazy val valClient = new QASRLValidationClient[SID](validationInstructions)
 

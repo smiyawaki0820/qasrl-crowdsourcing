@@ -168,7 +168,7 @@ class QASRLEvaluationHITManager[SID : Reader : Writer](
 
     // grant bonus as appropriate
     val numQuestions = hit.prompt.qaPairs.size
-    val totalBonus = settings.validationBonus(numQuestions)
+    val totalBonus = settings.arbitrationBonus(numQuestions)
     if(totalBonus > 0.0) {
       helper.config.service.sendBonus(
         new SendBonusRequest()

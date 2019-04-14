@@ -32,13 +32,15 @@ val httpsPort = 5908
 
 // Uncomment the phase you want to activate
 //val phase = Trap
-val phase = Training
-//val phase = Production
+//val phase = Training
+val phase = Production(1)
 val phaseName = phase.toString.toLowerCase
 val annotationPath = Paths.get(s"data/annotations.$phaseName")
 val liveDataPath = Paths.get(s"data/live.$phaseName")
 val sentsPath = Paths.get(s"data/$phaseName.csv")
 val qasrlPath = Paths.get(s"data/$phaseName.annot.csv")
+
+val numEvalsPerPrompt = 1
 
 implicit val timeout = akka.util.Timeout(5.seconds)
 implicit val config: TaskConfig = {
@@ -61,10 +63,8 @@ def exit = {
   System.out.println("Terminated actor system and logging. Type :q to end.")
 }
 
-val setup = new EvaluationSetup(qasrlPath, sentsPath, liveDataPath)
-
+val setup = new EvaluationSetup(qasrlPath, sentsPath, liveDataPath, phase, numEvalsPerPrompt)
 import setup.SentenceIdHasTokens
-
 val exp = setup.experiment
 
 // use with caution... intended mainly for sandbox
@@ -82,7 +82,6 @@ def yesterday = {
 }
 
 import scala.collection.JavaConverters._
-
 
 def progress() = {
   val totalPrompts = exp.allPrompts.length

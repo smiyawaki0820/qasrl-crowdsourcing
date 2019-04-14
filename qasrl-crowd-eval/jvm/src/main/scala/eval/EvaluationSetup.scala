@@ -22,7 +22,9 @@ case class QA[SID](sentenceId: SID, verbIndex: Int, question: String, answers: L
 
 class EvaluationSetup(qasrlPath: Path,
                       datasetPath: Path,
-                      liveDataPath: Path)(
+                      liveDataPath: Path,
+                      phase: Phase,
+                      numEvaluationAssignmentsForPrompt: Int)(
                        implicit config: TaskConfig) extends StrictLogging {
 
   val resourcePath = java.nio.file.Paths.get("datasets")
@@ -119,13 +121,12 @@ class EvaluationSetup(qasrlPath: Path,
     Wiktionary.getInflectionsForTokens(tokens)
   }
 
-  def numEvaluationAssignmentsForPrompt(p: QASRLArbitrationPrompt[SentenceId]) = 1
-
   // use qasrlPath as CSV Path for QA pairs
   val allPrompts: Vector[QASRLArbitrationPrompt[SentenceId]] = getValidationPrompts(qasrlPath, dataset)
   val experiment = new QASRLEvaluationPipeline[SentenceId](
     allPrompts,
-    numEvaluationAssignmentsForPrompt)
+    numEvaluationAssignmentsForPrompt,
+    phase)
 
   val exp = experiment
 

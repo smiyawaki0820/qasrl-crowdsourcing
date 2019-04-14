@@ -2,23 +2,11 @@ package qasrl.crowd
 
 import qasrl.crowd.util.PosTagger
 import qasrl.crowd.util.implicits._
-
 import qasrl.labeling.SlotBasedLabel
-
 import cats.implicits._
-
 import akka.actor._
 import akka.stream.scaladsl.{Flow, Source}
-
-import com.amazonaws.services.mturk.model.QualificationRequirement
-import com.amazonaws.services.mturk.model.QualificationTypeStatus
-import com.amazonaws.services.mturk.model.Locale
-import com.amazonaws.services.mturk.model.ListQualificationTypesRequest
-import com.amazonaws.services.mturk.model.ListWorkersWithQualificationTypeRequest
-import com.amazonaws.services.mturk.model.CreateQualificationTypeRequest
-import com.amazonaws.services.mturk.model.AssociateQualificationWithWorkerRequest
-import com.amazonaws.services.mturk.model.DisassociateQualificationFromWorkerRequest
-
+import com.amazonaws.services.mturk.model._
 import nlpdata.structure._
 import nlpdata.util.HasTokens
 import nlpdata.util.HasTokens.ops._
@@ -26,22 +14,20 @@ import nlpdata.util.Text
 import nlpdata.util.PosTags
 import nlpdata.util.LowerCaseStrings._
 import nlpdata.datasets.wiktionary.Inflections
-
 import spacro._
 import spacro.tasks._
 import spacro.util.Span
-
 import upickle.default._
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.collection.JavaConverters._
-
 import com.typesafe.scalalogging.StrictLogging
 
 class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
   val allPrompts: Vector[QASRLArbitrationPrompt[SID]], // IDs of sentences to annotate
-  val numValidationsForPrompt: QASRLArbitrationPrompt[SID] => Int,
+  val numValidationsForPrompt: Int,
+  phase: Phase,
   frozenEvaluationHITTypeId: Option[String] = None,
   validationAgreementDisqualTypeLabel: Option[String] = None,
   alternativePromptReaderOpt: Option[Reader[QASRLArbitrationPrompt[SID]]] = None)(
@@ -52,6 +38,8 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
 ) extends StrictLogging {
 
   import config.hitDataService
+
+  val qual = new QualificationService()
 
   val approvalRateQualificationTypeID = "000000000000000000L0"
   val approvalRateRequirement = new QualificationRequirement()
@@ -92,6 +80,17 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
     .withQualificationTypeId(valAgrDisqualTypeId)
     .withComparator("DoesNotExist")
     .withRequiredToPreview(false)
+
+  val productionQualName = "Production Phase for annotators in question generation"
+  val productionQualType = qual.findOrCreate(productionQualName, """Access granted to the live annotation round in writing questions and answers""".stripMargin)
+  val inProductionReq = qual.createQualificationReq(productionQualType, shouldHave = true)
+
+  // Currently, no training phase for arbitration task.
+  val InProductionGroupReq = phase match {
+    case Production(groupId) => qual.createQualificationReq(productionQualType, false, groupId)
+    case _ => throw new IllegalArgumentException(phase.toString)
+  }
+
 
   // NOTE may need to call multiple times to cover all workers... sigh TODO pagination
   def resetAllQualificationValues = {
@@ -143,14 +142,18 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
   // validation task definition
 
   val valHITType = HITType(
-    title = s"Answer simple questions about a sentence",
+    title = s"Consolidate Question-Answer pairs about a verb",
     description = s"""
-      Given a sentence and several questions about it,
-      highlight the part of the sentence that answers each question,
-      and mark questions that are invalid or redundant.
-      Maintain high agreement with others to stay qualified.
+      Given a sentence, a verb, and several Q&A pairs collected from different annotators,
+      You should identify the most naturally phrased question in English
+      for each subset of questions that ask about the same thing, and highlight all of its answers.
+      You should then mark the other valid but redundant questions as redundant.
+      Questions that are ungrammatical, not related to the verb, or that have no direct
+      answer in the text should be marked as invalid.
+      You should delete incorrect answers, modify existing ones if needed, and add new answers if missing.
+      Maintain high agreement with our expert annotator team to stay qualified.
     """.trim,
-    reward = settings.validationReward,
+    reward = settings.arbitrationReward,
     keywords = "language,english,question answering",
     qualRequirements = Array[QualificationRequirement](
       approvalRateRequirement, localeRequirement, valAgreementRequirement
@@ -190,7 +193,7 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
       valManagerPeek = new QASRLEvaluationHITManager(
         valAgrDisqualTypeId,
         valHelper,
-        if(config.isProduction) numValidationsForPrompt else (_ => 1),
+        if(config.isProduction) (_ => numValidationsForPrompt) else (_ => 1),
         if(config.isProduction) 100 else 20,
         allPrompts.iterator)
       valManagerPeek
@@ -356,5 +359,25 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
       println(f"${"Num answers:"}%-20s$numAs%d")
       println(f"${"Num invalids:"}%-20s$numInvalidAnswers%d")
       println(f"${"Total cost:"}%-20s$totalCost%.2f")
+  }
+
+  def info(): Unit = {
+    val totalPrompts = allPrompts.length * numValidationsForPrompt
+
+    val completedCount = allInfos.map(_.assignments.length).sum
+    val uploadedCount = allInfos.length
+
+    println(s"Arbitration HitTypeId: ${valTaskSpec.hitTypeId}")
+    println(s"Active Phase: $phase")
+    phase match {
+      case Production(groupId) => println(s"Group: $groupId")
+      case _ =>
+    }
+    println()
+    println(s"Production Qualification Id: ${productionQualType.getQualificationTypeId}")
+    println(s"Validator Disqualification Id: $valAgrDisqualTypeId")
+    println()
+    println(f"Assignments: $completedCount/$totalPrompts (completed / total)")
+    println(f"Uploaded generation hits to MTurk: $uploadedCount")
   }
 }

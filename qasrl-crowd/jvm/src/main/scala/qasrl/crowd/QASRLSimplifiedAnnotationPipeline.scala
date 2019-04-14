@@ -66,6 +66,8 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
   lazy val assignLimit: Int = allPrompts.length
   logger.info(s"Assignment Limit: $assignLimit")
 
+  val qual = new QualificationService()
+
   implicit val ads = annotationDataService
 
   import config.hitDataService
@@ -75,35 +77,12 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
     val qualResult = config.service.createQualificationType(
       new CreateQualificationTypeRequest()
         .withName(name)
-        .withKeywords(KEYWORDS)
+        .withKeywords(qual.KEYWORDS)
         .withDescription(description)
         .withQualificationTypeStatus(QualificationTypeStatus.Active)
     )
     qualResult.getQualificationType
   }
-
-  private def findQualificationType (qualificationName: String): Option[QualificationType] = {
-    val qualificationTypes = config.service.listQualificationTypes(
-      new ListQualificationTypesRequest()
-        .withQuery(qualificationName)
-        .withMustBeOwnedByCaller(true)
-        .withMustBeRequestable(false)
-        .withMaxResults(100)
-    ).getQualificationTypes.asScala.toList
-    val found = qualificationTypes.find(_.getName == qualificationName)
-    found
-  }
-
-  private def createQualificationReq(qualification: QualificationType, shouldHave: Boolean): QualificationRequirement = {
-    val comparator = if (shouldHave) "Exists" else "DoesNotExist"
-    val req = new QualificationRequirement()
-      .withQualificationTypeId(qualification.getQualificationTypeId)
-      .withComparator(comparator)
-      .withRequiredToPreview(false)
-    req
-  }
-
-  private val KEYWORDS = "language,english,question answering"
 
   val approvalRateQualificationTypeID = "000000000000000000L0"
   val approvalRateRequirement = new QualificationRequirement()
@@ -121,67 +100,28 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
 
   val genCoverageDisqualTypeName = "Questions asked per verb disqualification"
-
-  val genCoverageDisqualType = findQualificationType(genCoverageDisqualTypeName).getOrElse{
-    logger.info("Generating generation coverage disqualification type...")
-    createQualification(genCoverageDisqualTypeName, "Number of questions asked for each verb in our question-answer " +
-      "pair generation task is too low.")
-  }
-  val genCoverageRequirement = createQualificationReq(genCoverageDisqualType, false)
-
+  val genCoverageDisqualType = qual.findOrCreate(genCoverageDisqualTypeName,"Number of questions asked for each verb in our question-answer pair generation task is too low.")
+  val genCoverageRequirement =  qual.createQualificationReq(genCoverageDisqualType, false)
   val genAccDisqualTypeName = "Question-answer writing accuracy disqualification"
-  val genAccDisqualType = findQualificationType(genAccDisqualTypeName).getOrElse {
-    logger.info("Generating generation accuracy disqualification type...")
-    createQualification(genAccDisqualTypeName, "Accuracy on the question-answer writing task is too low.")
-  }
-
-  val genAccuracyRequirement = createQualificationReq(genAccDisqualType, shouldHave = false)
+  val genAccDisqualType = qual.findOrCreate(genAccDisqualTypeName,"Accuracy on the question-answer writing task is too low.")
+  val genAccuracyRequirement = qual.createQualificationReq(genAccDisqualType, shouldHave = false)
 
   val genTrainingQualName = "Training and Qualification Phase for annotators in question generation"
   val genProductionQualName = "Production Phase for annotators in question generation"
+  val genTrainingQualType = qual.findOrCreate(genTrainingQualName, """Access granted to the training and qualification rounds in writing questions and answers""".stripMargin)
+  val genProductionQualType = qual.findOrCreate(genProductionQualName, """Access granted to the live annotation round in writing questions and answers""".stripMargin)
 
-  val genTrainingQualType = findQualificationType(genTrainingQualName).getOrElse{
-    logger.info("Generating generation training qualification type...")
-    createQualification(genTrainingQualName,
-      description="""Access granted to the training and qualification rounds
-        |in writing questions and answers""".stripMargin)
-  }
+  val InTrainingReq = qual.createQualificationReq(genTrainingQualType, shouldHave = true)
+  val NotInTrainingReq = qual.createQualificationReq(genTrainingQualType, shouldHave = false)
+  val InProductionReq = qual.createQualificationReq(genProductionQualType, shouldHave = true)
+  val NotInProductionReq = qual.createQualificationReq(genProductionQualType, shouldHave = false)
 
-  val genProductionQualType = findQualificationType(genProductionQualName).getOrElse{
-    logger.info("Generating generation production qualification type...")
-    createQualification(genProductionQualName,
-      description="""Access granted to the live annotation round
-          |in writing questions and answers""".stripMargin)
-  }
-
-  val InTrainingReq = createQualificationReq(genTrainingQualType, shouldHave = true)
-  val NotInTrainingReq = createQualificationReq(genTrainingQualType, shouldHave = false)
-  val InProductionReq = createQualificationReq(genProductionQualType, shouldHave = true)
-  val NotInProductionReq = createQualificationReq(genProductionQualType, shouldHave = false)
-
-
-  def revokeAllWorkerQuals(qualTypeId: String, reason: String = "") = {
-    val quals = config.service.listWorkersWithQualificationType(
-      new ListWorkersWithQualificationTypeRequest()
-        .withQualificationTypeId(qualTypeId)
-        .withMaxResults(100)
-    ).getQualifications.asScala.toList
-    for (qual <- quals) {
-      logger.info(s"Restoring qualificiation: $qualTypeId for worker: ${qual.getWorkerId}")
-      config.service.disassociateQualificationFromWorker(
-        new DisassociateQualificationFromWorkerRequest()
-          .withQualificationTypeId(qualTypeId)
-          .withWorkerId(qual.getWorkerId)
-      )
-    }
-  }
-
-  // NOTE may need to call multiple times to cover all workers... sigh TODO pagination
+    // NOTE may need to call multiple times to cover all workers... sigh TODO pagination
   def resetAllQualificationValues = {
-    revokeAllWorkerQuals(genCoverageDisqualType.getQualificationTypeId)
-    revokeAllWorkerQuals(genAccDisqualType.getQualificationTypeId)
-    revokeAllWorkerQuals(genTrainingQualType.getQualificationTypeId)
-    revokeAllWorkerQuals(genProductionQualType.getQualificationTypeId)
+    qual.revokeAllWorkerQuals(genCoverageDisqualType.getQualificationTypeId)
+    qual.revokeAllWorkerQuals(genAccDisqualType.getQualificationTypeId)
+    qual.revokeAllWorkerQuals(genTrainingQualType.getQualificationTypeId)
+    qual.revokeAllWorkerQuals(genProductionQualType.getQualificationTypeId)
   }
 
   lazy val (taskPageHeadLinks, taskPageBodyLinks) = {
@@ -217,7 +157,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
   private def selectHitType(phase: Phase) = {
     val titleSuffix = phase match {
       case Training => "[Qualification]"
-      case Production => "[Production]"
+      case Production(groupId) => "[Production]"
       case default => ""
     }
     def selectDescription(phase: Phase): String = phase match {
@@ -233,7 +173,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
         the received feedback. Successful accomplishment of the training round is essential to
         access more hits in the full annotation rounds."""
 
-      case Production => """[Production phase]
+      case Production(groupId) => """[Production phase]
 
         Given a sentence and a verb from that sentence,
         write questions and answers about that verb.
@@ -256,8 +196,10 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
 
     val phaseRequirements = phase match {
       case Training => List(InTrainingReq, NotInProductionReq)
-      case Production => List(InProductionReq, NotInTrainingReq)
-      case default => List(NotInProductionReq, NotInTrainingReq)
+      case Production(groupId) =>
+        val inProductionGroupReq = qual.createQualificationReq(genProductionQualType, true, groupId)
+        List(InProductionReq, NotInTrainingReq, inProductionGroupReq)
+      case _ => List(NotInProductionReq, NotInTrainingReq)
     }
 
     HITType(
@@ -315,7 +257,7 @@ class QASRLSimplifiedAnnotationPipeline[SID : Reader : Writer : HasTokens](
   val genTaskKey = phase match {
     case Trap => settings.generationTrapTaskKey
     case Training => settings.generationTrainTaskKey
-    case Production => settings.generationProdTaskKey
+    case Production(groupId) => settings.generationProdTaskKey
   }
 
   val genTaskSpec = TaskSpecification.NoWebsockets[QASRLGenerationPrompt[SID], List[VerbQA], QASRLGenerationAjaxRequest[SID]](

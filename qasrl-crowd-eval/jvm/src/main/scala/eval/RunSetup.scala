@@ -3,7 +3,7 @@ package eval
 import java.nio.file.{Path, Paths}
 
 import eval._
-import qasrl.crowd.{QASRLValidationAnswer, _}
+import qasrl.crowd.{Production, QASRLValidationAnswer, _}
 import spacro._
 import spacro.tasks._
 import spacro.util._
@@ -28,8 +28,9 @@ object RunSetup extends App {
 
   // Uncomment the phase you want to activate
   //val phase = Trap
-  val phase = Training
-  //val phase = Production
+//  val phase = Training
+  val phase = Production(1)
+
   val phaseName = phase.toString.toLowerCase
   val annotationPath = Paths.get(s"data/annotations.$phaseName")
   val liveDataPath = Paths.get(s"data/live.$phaseName")
@@ -46,7 +47,8 @@ object RunSetup extends App {
       SandboxTaskConfig(projectName, domain, interface, httpPort, httpsPort, hitDataService)
     }
   }
-  val setup = new EvaluationSetup(qasrlPath, sentsPath, liveDataPath)
+  val numEvalsPerPrompt = 1
+  val setup = new EvaluationSetup(qasrlPath, sentsPath, liveDataPath, phase, numEvalsPerPrompt)
 
   import setup.SentenceIdHasTokens
 

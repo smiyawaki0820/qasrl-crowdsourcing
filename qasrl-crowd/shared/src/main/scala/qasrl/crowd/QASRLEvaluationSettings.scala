@@ -12,6 +12,13 @@ trait QASRLEvaluationSettings {
   val validationReward = 0.02
   val validationBonusPerQuestion = 0.02
   val validationBonusThreshold = 1
+  val arbitrationReward = 0.05
+  val arbitrationBonusPerQuestion = 0.04
+  val arbitrationBonusThreshold = 0
+
+
+  def arbitrationBonus(numQuestions: Int) =
+    math.max(0.0, arbitrationBonusPerQuestion * (numQuestions - arbitrationBonusThreshold))
 
   def validationBonus(numQuestions: Int) =
     math.max(0.0, validationBonusPerQuestion * (numQuestions - validationBonusThreshold))

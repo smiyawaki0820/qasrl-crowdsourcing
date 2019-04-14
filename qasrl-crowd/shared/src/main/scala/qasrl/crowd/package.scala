@@ -9,7 +9,7 @@ package object crowd {
   sealed trait Phase { }
   case object Trap extends Phase{ }
   case object Training extends Phase { }
-  case object Production extends Phase { }
+  case class Production(groupId: Int) extends Phase { override def toString = "Production"}
 
   case class QASRLGenerationPrompt[SID](
     id: SID,

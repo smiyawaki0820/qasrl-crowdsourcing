@@ -153,7 +153,7 @@ class QASRLEvaluationClient[SID: Writer : Reader](
           ^.borderRadius := "2px",
           ^.textAlign := "center",
           ^.width := "120px",
-          (^.backgroundColor := "#E01010").when(answer.isRedundant),
+          (^.backgroundColor := "#FF8700").when(answer.isRedundant),
           ^.onClick --> toggleRedundantAtIndex(highlightedAnswers)(index),
           "Redundant"
         ),
@@ -332,7 +332,7 @@ class QASRLEvaluationClient[SID: Writer : Reader](
                                 qaField(state, sentence, highlightedAnswers)(index))
                             }
                           ),
-                          <.p(s"Bonus: ${dollarsToCents(settings.validationBonus(questions.size))}c")
+                          <.p(s"Bonus: ${dollarsToCents(settings.arbitrationBonus(questions.size))}c")
                         ),
                         <.div(
                           ^.classSet1("form-group"),
