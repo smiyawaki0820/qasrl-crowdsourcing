@@ -87,7 +87,7 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
 
   // Currently, no training phase for arbitration task.
   val InProductionGroupReq = phase match {
-    case Production(groupId) => qual.createQualificationReq(productionQualType, false, groupId)
+    case Production(groupId) => qual.createQualificationReq(productionQualType, true, groupId)
     case _ => throw new IllegalArgumentException(phase.toString)
   }
 
@@ -156,8 +156,7 @@ class QASRLEvaluationPipeline[SID : Reader : Writer : HasTokens](
     reward = settings.arbitrationReward,
     keywords = "language,english,question answering",
     qualRequirements = Array[QualificationRequirement](
-      approvalRateRequirement, localeRequirement, valAgreementRequirement
-    ),
+      approvalRateRequirement, localeRequirement, valAgreementRequirement, inProductionReq, InProductionGroupReq),
     autoApprovalDelay = 2592000L, // 30 days
     assignmentDuration = 600L)
 
