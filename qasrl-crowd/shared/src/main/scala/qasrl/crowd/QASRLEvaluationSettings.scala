@@ -13,7 +13,7 @@ trait QASRLEvaluationSettings {
   val validationBonusPerQuestion = 0.02
   val validationBonusThreshold = 1
   val arbitrationReward = 0.05
-  val arbitrationBonusPerQuestion = 0.04
+  val arbitrationBonusPerQuestion = 0.03
   val arbitrationBonusThreshold = 0
 
 
