@@ -17,6 +17,7 @@ import spacro.util.Span
 import scala.collection.immutable
 import scala.util.Try
 import scala.collection.JavaConverters._
+import scala.util.Random
 
 case class QA[SID](sentenceId: SID, verbIndex: Int, question: String, answers: List[Span], assignId: String)
 
@@ -83,7 +84,10 @@ class EvaluationSetup(qasrlPath: Path,
     val valPrompts = for {
       (key, qaGroup) <- qaPairs.groupBy(qa => (qa.sentenceId, qa.verbIndex))
       (sentId, verbIdx) = key
-      qasAndIds = getVerbQas(verbIdx, qaGroup)
+      assigns = qaGroup.map(_.assignId).distinct
+      randAssigns = Random.shuffle(assigns).take(2)
+      qa_group_in_combination = qaGroup.filter(qa => randAssigns.contains(qa.assignId))
+      qasAndIds = getVerbQas(verbIdx, qa_group_in_combination)
       genPrompt = QASRLGenerationPrompt[SentenceId](sentId, verbIdx)
     } yield QASRLArbitrationPrompt[SentenceId](genPrompt, qasAndIds)
     valPrompts.toVector
