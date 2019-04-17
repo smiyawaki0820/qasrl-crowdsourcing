@@ -57,6 +57,10 @@ class QASRLEvaluationClient[SID: Writer : Reader](
 
   lazy val questions = prompt.qaPairs.map(_._2.question)
   lazy val proposedAnswers = prompt.qaPairs.map(_._2.answers)
+  // HACK: component update is called for all state changes other than initial
+  // If someone submits an answer without doing anything that would change the state,
+  // then we will not setRepsonse anywhere...
+  setResponse(State.initial.answers)
 
   val SpanHighlightingComponent = new SpanHighlightingComponent2(proposedAnswers) // question
   import SpanHighlightingComponent._
