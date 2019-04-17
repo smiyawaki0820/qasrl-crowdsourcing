@@ -49,6 +49,9 @@ class EvaluationSetup(qasrlPath: Path,
   }
 
   private def decodeAnswerRange(answerRange: String): List[Span] = {
+    if (answerRange.isEmpty)
+      return List.empty[Span]
+
     val encodedSpans: Vector[String] = answerRange.split("~!~").toVector
     val spans = encodedSpans.map(encSpan => {
       val splits = encSpan.split(':').toVector
