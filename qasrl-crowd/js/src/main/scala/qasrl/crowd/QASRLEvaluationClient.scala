@@ -57,10 +57,7 @@ class QASRLEvaluationClient[SID: Writer : Reader](
 
   lazy val questions = prompt.qaPairs.map(_._2.question)
   lazy val proposedAnswers = prompt.qaPairs.map(_._2.answers)
-  // HACK: component update is called for all state changes other than initial
-  // If someone submits an answer without doing anything that would change the state,
-  // then we will not setRepsonse anywhere...
-  setResponse(State.initial.answers)
+
 
   val SpanHighlightingComponent = new SpanHighlightingComponent2(proposedAnswers) // question
   import SpanHighlightingComponent._
@@ -71,7 +68,14 @@ class QASRLEvaluationClient[SID: Writer : Reader](
                             answers: List[QASRLValidationAnswer])
 
   object State {
-    def initial = State(0, false, proposedAnswers.map(spans => Answer(spans)))
+    def initial = {
+      val answers = proposedAnswers.map(spans => Answer(spans))
+      // HACK: component update is called for all state changes other than initial
+      // If someone submits an answer without doing anything that would change the state,
+      // then we will not setRepsonse anywhere...
+      setResponse(answers)
+      State(0, false, answers)
+    }
   }
 
   def answerSpanOptics(questionIndex: Int) =
