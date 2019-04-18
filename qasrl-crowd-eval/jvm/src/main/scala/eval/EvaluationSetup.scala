@@ -88,7 +88,9 @@ class EvaluationSetup(qasrlPath: Path,
       (key, qaGroup) <- qaPairs.groupBy(qa => (qa.sentenceId, qa.verbIndex))
       (sentId, verbIdx) = key
       assigns = qaGroup.map(_.assignId).distinct
-      randAssigns = Random.shuffle(assigns).take(2)
+      slidingAssigns: Iterator[Vector[String]] = Random.shuffle(assigns).sliding(size=2, step=2)
+      randAssigns <- slidingAssigns
+      if (randAssigns.size > 1)
       qa_group_in_combination = qaGroup.filter(qa => randAssigns.contains(qa.assignId))
       qasAndIds = getVerbQas(verbIdx, qa_group_in_combination)
       genPrompt = QASRLGenerationPrompt[SentenceId](sentId, verbIdx)

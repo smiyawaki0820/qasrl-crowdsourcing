@@ -23,7 +23,7 @@ import scala.reflect.macros.whitebox
 
 
 case class QASRL(sid: String, verbIdx: Int, verb: String,
-                 workerId: String, assignId: String, sourceAssignId: Option[String],
+                 workerId: String, assignId: String, sourceAssignId: String,
                  question: String, isRedundant: Boolean, answerRanges: String, answers: String,
                  wh: String, subj: String, obj: String, obj2: String,
                  aux: String, prep: String, verbPrefix: String,
@@ -138,7 +138,7 @@ object DataIO extends LazyLogging {
       val answerRanges = verbQA.answers.map(getRangeAsText).mkString("~!~")
       val answers = verbQA.answers.map(getText(_, sTokens)).mkString("~!~")
       QASRL(idString, verbIndex, verb,
-        workerId, assignId, None, question, false, answerRanges, answers,
+        workerId, assignId, None.toString, question, false, answerRanges, answers,
         slot.wh, subj, obj, obj2,
         aux, prep, verbPrefix,
         frame.isPassive, frame.isNegated)
@@ -192,7 +192,7 @@ object DataIO extends LazyLogging {
       val obj2 = slot.obj2.getOrElse("".lowerCase)
       val isValid = answer.isAnswer
       QASRL(idString, verbIndex, verb,
-        workerId, assignId, Some(sourceAssignId), question, answer.isRedundant,
+        workerId, assignId, sourceAssignId, question, answer.isRedundant,
         answerRanges, answerTexts,
         slot.wh, subj, obj, obj2,
         aux, prep, verbPrefix,
