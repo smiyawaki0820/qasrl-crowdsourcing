@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 import pandas as pd
-from annotations.decode_encode_answers import decode_qasrl
-from evaluate.argument_first_evaluation import eval_datasets
+from decode_encode_answers import decode_qasrl
+from argument_first_evaluation import eval_datasets
 import os
 
 def parse_args():

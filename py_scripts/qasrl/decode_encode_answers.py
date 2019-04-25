@@ -1,9 +1,6 @@
 import pandas as pd
 from typing import List, Tuple
-Span = Tuple[int, int]  # Should be replaced with argument
-Argument = List[Span]  # Should be replaced with argument cluster
-ArgumentText = List[str]  # Each string is an argument from the argument cluster
-
+from common import Argument, QUESTION_FIELDS
 SPAN_SEPARATOR = "~!~"
 
 
@@ -15,43 +12,40 @@ def is_invalid_range(r: Argument):
     return r[0] == NO_RANGE
 
 
-from paraphrases.paraphrases import QUESTION_FIELDS
-
-
-def encode_argument(arg: Argument) -> str:
+def encode_argument(arg: List[Argument]) -> str:
     if arg[0] == NO_RANGE:
         return NO_RANGE
 
     return SPAN_SEPARATOR.join([encode_span(span) for span in arg])
 
 
-def encode_span(span: Span):
+def encode_span(span: Argument):
     if span == NO_RANGE:
         return NO_RANGE
     return "{}:{}".format(span[0], span[1])
 
 
-def encode_argument_text(arg_text: ArgumentText):
+def encode_argument_text(arg_text: str):
     return SPAN_SEPARATOR.join(arg_text)
 
 
-def argument_to_text(argument: Argument, tokens: List[str]) -> ArgumentText:
+def argument_to_text(argument: Argument, tokens: List[str]) -> List[str]:
     return [span_to_text(span, tokens) for span in argument]
 
 
-def span_to_text(span: Span, tokens: List[str]) -> str:
+def span_to_text(span: Argument, tokens: List[str]) -> str:
     if type(span) is not tuple:
         return ""
     span_start, span_end = span
     return " ".join(tokens[span_start: span_end])
 
 
-def decode_span(span_str: str) -> Span:
+def decode_span(span_str: str) -> Argument:
     splits = span_str.split(":")
     return int(splits[0]), int(splits[1])
 
 
-def decode_argument(arg_str: str) -> Argument:
+def decode_argument(arg_str: str) -> List[Argument]:
     ranges = arg_str.split(SPAN_SEPARATOR)
     if ranges[0] == NO_RANGE:
         return ranges
@@ -84,10 +78,10 @@ def decode_qasrl(qasrl_df: pd.DataFrame) -> pd.DataFrame:
         qasrl_df[c] = qasrl_df[c].apply(lambda a: a.split(SPAN_SEPARATOR))
     for c in answer_range_cols:
         qasrl_df[c] = qasrl_df[c].apply(decode_argument)
-    q_fields = [c for c in QUESTION_FIELDS
-                if c in qasrl_df.columns and c != "wh"]
-    for c in q_fields:
-        qasrl_df[c].fillna("", inplace=True)
+
+    for c in QUESTION_FIELDS:
+        if c in qasrl_df:
+            qasrl_df[c].fillna("", inplace=True)
 
     return qasrl_df
 
