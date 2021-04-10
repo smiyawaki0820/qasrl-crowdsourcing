@@ -4,49 +4,45 @@ Repository for QA-SRL tools, particularly for interaction and crowdsourcing.
 
 ## Contents
 
-There are currently three projects in this repository.
+リポジトリ概要
 
- * `qasrl`: General tools for validating, interpreting, and autocompleting QA-SRL.
- * `qasrl-crowd`: UI and server code for for crowdsourcing QA-SRL data on Mechanical Turk.
- * `qasrl-crowd-example`: Example SBT project showing how to use the crowdsourcing pipeline for your own data.
+ * `qasrl`: QA-SRL における `validating/interpreting/autocompleting`
+ * `qasrl-crowd`: QA-SRL のデータを MTurk でクラウドソーシングするための UI とサーバコード
+ * `qasrl-crowd-example`: クラウドソーシングパイプラインを自己のデータに使用するための sbt プロジェクト。
 
 ## Usage
+- nlpdata と spacro の依存関係がダウンロードされ、ローカルの Ivy キャッシュにパブリッシュされる
+- Wikitionary のデータを datasets/wikitionary にダウンロード
 
-Since I have not published this code on Maven or anything, it is easiest to use it from source,
-for example, as a submodule in your project.
-Clone it to your machine and run `scripts/setup.sh`.
-This will download the `nlpdata` and `spacro` dependencies and publish them locally to your Ivy cache so this will compile.
-It will also prompt you to download a Wiktionary dataset, which will be placed at `datasets/wiktionary`.
-This will be necessary to run the QA-SRL validation and autocomplete, crowdsourcing, etc.
+```bash
+bash script/setup.sh
+```
 
 ### Autocomplete
+- オートコンプリート機能がどのように動作するかを知るために
+- 質問のプレフィックス (または質問全体) を入力すると、自動補完のフィードバックが表示される
 
-To get an idea of how the autocomplete functionality works, try running `scripts/run_autocomplete_example.sh`.
-This will throw you into a REPL where you may type prefixes to questions (or full questions)
-and get the autocomplete feedback displayed to you when you press Enter.
+```bash
+bash scripts/run_autocomplete_example.sh
+```
 
-If you wish to use the autocomplete or other functionality in your own code,
-take a look at `scripts/autocomplete_example.scala`, which was running in the previous step, for example usage.
+- オートコンプリートやその他の機能を自分のコードで使用したい場合は、`scripts/autocomplete_example.scala` で使用例を確認してください。
+
 
 ### Crowdsourcing
 
-To start up the crowdsourcing pipeline and see a preview of the task UI, run `scripts/run_crowd_example.sh` and go to
-`localhost:8888/task/generation/preview` in your browser.
-To understand how to set everything up so it works on MTurk,
-adapt the instructions [here](https://github.com/uwnlp/qamr/tree/master/code)
-to the local code. To trace the main entry points:
+- クラウドソーシングのパイプラインを起動し、UI のプレビューを見るには、`scripts/run_crowd_example.sh` を実行し、ブラウザで http://localhost:8888/task/generation/preview にアクセスしてください。
+- MTurk での動作設定は、[こちら](https://github.com/uwnlp/qamr/tree/master/code) を参考にしてください。
+- 主なエントリーポイントをたどるには：
 
- * [`scripts/crowd_example.scala`](https://github.com/julianmichael/qasrl-crowdsourcing/blob/master/scripts/crowd_example.scala)
-   is what you run on the SBT console to get started.
- * That creates an [`AnnotationSetup`](https://github.com/julianmichael/qasrl-crowdsourcing/blob/master/qasrl-crowd-example/jvm/src/main/scala/example/AnnotationSetup.scala) object defined in `qasrl-crowd-example`,
-   which assembles the various data and resources needed for the crowdsourcing pipeline.
- * That creates a [`QASRLAnnotationPipeline`](https://github.com/julianmichael/qasrl-crowdsourcing/blob/master/qasrl-crowd/jvm/src/main/scala/qasrl/crowd/QASRLAnnotationPipeline.scala) object,
-   which creates the web services and interfaces with MTurk to upload and download data and assess workers.
- * Finally, telling the `QASRLAnnotationPipeline` object to `start()` will start the crowdsourcing task.
+   * sbt コンソールを始めるために [`scripts/crowd_example.scala`](https://github.com/julianmichael/qasrl-crowdsourcing/blob/master/scripts/crowd_example.scala) を実行
+   * `qasrl-crowd-example` で定義された [AnnotationSetup](https://github.com/julianmichael/qasrl-crowdsourcing/blob/master/qasrl-crowd-example/jvm/src/main/scala/example/AnnotationSetup.scala) オブジェクトを作成し、クラウドソーシングパイプラインに必要な様々なデータとリソースを組み立てる
+   * データのアップロード・ダウンロード、およびワーカーの評価を行うためのウェブサービス と MTurk インターフェースを作成する [QASRLAnnotationPipeline](https://github.com/julianmichael/qasrl-crowdsourcing/blob/master/qasrl-crowd/jvm/src/main/scala/qasrl/crowd/QASRLAnnotationPipeline.scala) オブジェクトが作成される。
+   * 最後に、QASRLAnnotationPipeline オブジェクトに `start()` と伝えると、クラウドソーシングのタスクが開始される。
  
-Again, see the [instructions in the QAMR project](https://github.com/uwnlp/qamr/tree/master/code) for a more detailed account.
+詳細は QAMR の[仕様書](https://github.com/uwnlp/qamr/tree/master/code)をご覧ください。
 
 ### Misc
 
-Finally, to use this project in yours, either add it as a source dependency or run
-`sbt publishLocal` and add it as a managed dependency in your desired project.
+最後に、このプロジェクトを自分のプロジェクトで使用するには、ソースの依存関係として追加するか、または
+`sbt publishLocal` を実行して、目的のプロジェクトにマネージド依存関係として追加します。
